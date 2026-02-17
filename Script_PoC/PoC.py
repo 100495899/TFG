@@ -13,28 +13,26 @@ LONGITUD_EXACTA = 500
 TAMANO_LOTE = 5000
 NUM_DIGITOS = len(str(NUM_RUIDO))
 
-def generador_textos_aleatorios(longitud_deseada):
-    vocabulario = [
-        "el", "la", "los", "las", "un", "una", "empresa", "informe", "proyecto", 
-        "datos", "sistema", "usuario", "reunion", "cliente", "presupuesto", 
-        "analisis", "desarrollo", "seguridad", "red", "servidor", "ventas", 
-        "marketing", "objetivos", "trimestre", "resultados", "recursos", "humanos",
-        "tecnologia", "innovacion", "estrategia", "plan", "equipo", "gestion"
-    ]
+vocabulario_it = ["servidor", "red", "nube", "código", "python", "base de datos", "firewall", "router", "API", "microservicios", "docker", "bug", "parche", "backend", "frontend", "latencia", "ciberseguridad", "despliegue"]
+vocabulario_finanzas = ["presupuesto", "inversión", "ROI", "fiscal", "facturación", "auditoría", "impuestos", "balance", "gastos", "ingresos", "EBITDA", "activos", "pasivos", "trimestre", "bolsa", "acciones", "tesorería"]
+vocabulario_marketing = ["campaña", "SEO", "leads", "conversión", "redes sociales", "audiencia", "branding", "publicidad", "anuncios", "engagement", "funnel", "CTR", "target", "newsletter", "patrocinio", "eventos"]
+vocabulario_rrhh = ["empleado", "despido", "contrato", "entrevista", "confidencial", "beneficios", "baja", "evaluación", "desempeño", "retención", "talento", "horario", "fichaje", "formación", "nómina", "sindicato"]
     
-    num_palabras = (longitud_deseada // 2) + 1
+
+def generador_textos_aleatorios(vocabulario):
+  
+    num_palabras = (LONGITUD_EXACTA // 4) + 1
 
     palabras_elegidas = random.choices(vocabulario, k=num_palabras)
 
     texto_completo = " ".join(palabras_elegidas)
         
-    return texto_completo[:longitud_deseada]
+    return texto_completo[:LONGITUD_EXACTA]
 
 
 def visualizar_espacio_vectorial(collection, id_secreto):
     print("\n[*] Extrayendo vectores y calculando el mapa 2D (PCA)...")
     
-    # 1. Le pedimos a ChromaDB que nos devuelva TODOS los vectores
     datos = collection.get(include=['embeddings'])
     embeddings = datos['embeddings']
     ids = datos['ids']
@@ -43,11 +41,9 @@ def visualizar_espacio_vectorial(collection, id_secreto):
         print("[!] La colección está vacía.")
         return
 
-    # 2. Aplastamos de 384 dimensiones a 2 dimensiones
     pca = PCA(n_components=2)
     vectores_2d = pca.fit_transform(embeddings)
     
-    # 3. Separamos las coordenadas para pintarlas de distinto color
     x_ruido, y_ruido = [], []
     x_secreto, y_secreto = [], []
     
@@ -59,11 +55,9 @@ def visualizar_espacio_vectorial(collection, id_secreto):
             x_ruido.append(vectores_2d[i][0])
             y_ruido.append(vectores_2d[i][1])
             
-    # 4. Dibujamos el mapa
     plt.figure(figsize=(10, 8))
     plt.scatter(x_ruido, y_ruido, c='blue', label='Ruido Corporativo', alpha=0.3, s=10)
     
-    # Pintamos el secreto como una estrella roja gigante
     if x_secreto:
         plt.scatter(x_secreto, y_secreto, c='red', label='Documento Secreto', marker='*', s=300, edgecolors='black')
         
@@ -88,15 +82,22 @@ textos_ruido = []
 ids_ruido = []
 
 for i in range(NUM_RUIDO):
-   
-    texto = generador_textos_aleatorios(LONGITUD_EXACTA)
+    if i < NUM_RUIDO/3:
+        texto = generador_textos_aleatorios(vocabulario_finanzas)
+
+    elif NUM_RUIDO/3 < i < 2*NUM_RUIDO/3:
+        texto = generador_textos_aleatorios(vocabulario_it)
+    
+    else:
+        texto = generador_textos_aleatorios(vocabulario_marketing)
+
+
     textos_ruido.append(texto)
 
     ids_ruido.append(f"doc_{i:0{NUM_DIGITOS}d}")
 
-texto_base = "CONFIDENCIAL: listado oficial de despidos de la empresa las siguientes personas perderan su empleo "
 
-texto_secreto = texto_base + generador_textos_aleatorios(LONGITUD_EXACTA - len(texto_base))
+texto_secreto = generador_textos_aleatorios(vocabulario_rrhh)
 id_secreto = f"doc_{NUM_RUIDO}"
 
 textos_ruido.append(texto_secreto)
@@ -126,8 +127,8 @@ print(f"[*] Iniciando bateria de ataques ({NUM_PRUEBAS} iteraciones por query)..
 tiempos_acierto = []
 tiempos_fallo = []
 
-query_acierto = "¿Dónde está la lista de despidos?"
-query_fallo = "¿Cuál es la receta secreta de la tarta de manzana?"
+query_acierto = "confidencial despidos entrevistas"
+query_fallo = "manzana tarta comida"
 
 vector_acierto = emb_fn([query_acierto])
 vector_fallo = emb_fn([query_fallo])
@@ -137,15 +138,14 @@ collection.query(query_embeddings=vector_acierto, n_results=1)
 gc.disable()
 
 for i in range(NUM_PRUEBAS):
-    # --- PRUEBA 1: Buscar algo que NO está ---
+
     inicio = time.perf_counter_ns()
-    _ = collection.query(query_embeddings=vector_fallo, n_results=100)
+    _ = collection.query(query_embeddings=vector_fallo, n_results=5)
     fin = time.perf_counter_ns()
     tiempos_fallo.append(fin - inicio)
     
-    # --- PRUEBA 2: Buscar algo que SÍ está ---
     inicio = time.perf_counter_ns()
-    _ = collection.query(query_embeddings=vector_acierto, n_results=100)
+    _ = collection.query(query_embeddings=vector_acierto, n_results=5)
     fin = time.perf_counter_ns()
     tiempos_acierto.append(fin - inicio)
 
