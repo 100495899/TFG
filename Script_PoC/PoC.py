@@ -7,11 +7,12 @@ import matplotlib.pyplot as plt
 import gc
 from sklearn.decomposition import PCA
 
-NUM_RUIDO = 300
+NUM_DOCS = 301
+NUM_RUIDO = NUM_DOCS - (NUM_DOCS//4)
 NUM_PRUEBAS = 50
 LONGITUD_EXACTA = 500
 TAMANO_LOTE = 5000
-NUM_DIGITOS = len(str(NUM_RUIDO))
+NUM_DIGITOS = len(str(NUM_DOCS))
 
 vocabulario_it = ["servidor", "red", "nube", "código", "python", "base de datos", "firewall", "router", "API", "microservicios", "docker", "bug", "parche", "backend", "frontend", "latencia", "ciberseguridad", "despliegue"]
 vocabulario_finanzas = ["presupuesto", "inversión", "ROI", "fiscal", "facturación", "auditoría", "impuestos", "balance", "gastos", "ingresos", "EBITDA", "activos", "pasivos", "trimestre", "bolsa", "acciones", "tesorería"]
@@ -30,7 +31,7 @@ def generador_textos_aleatorios(vocabulario):
     return texto_completo[:LONGITUD_EXACTA]
 
 
-def visualizar_espacio_vectorial(collection, id_secreto):
+def visualizar_espacio_vectorial(collection):
     print("\n[*] Extrayendo vectores y calculando el mapa 2D (PCA)...")
     
     datos = collection.get(include=['embeddings'])
@@ -48,7 +49,7 @@ def visualizar_espacio_vectorial(collection, id_secreto):
     x_secreto, y_secreto = [], []
     
     for i, id_doc in enumerate(ids):
-        if id_doc == id_secreto:
+        if id_doc in ids_secretos:
             x_secreto.append(vectores_2d[i][0])
             y_secreto.append(vectores_2d[i][1])
         else:
@@ -76,7 +77,7 @@ emb_fn = embedding_functions.DefaultEmbeddingFunction()
 
 collection = client.create_collection(name="tfg_rag_db", embedding_function=emb_fn)
 
-print(f"[*] Generando e insertando {NUM_RUIDO} documentos de ruido de {LONGITUD_EXACTA} chars...")
+print(f"[*] Generando {NUM_RUIDO} documentos de ruido de {LONGITUD_EXACTA} chars...")
 
 textos_ruido = []
 ids_ruido = []
@@ -97,18 +98,28 @@ for i in range(NUM_RUIDO):
     ids_ruido.append(f"doc_{i:0{NUM_DIGITOS}d}")
 
 
-texto_secreto = generador_textos_aleatorios(vocabulario_rrhh)
-id_secreto = f"doc_{NUM_RUIDO}"
+print(f"[*] Generando {NUM_DOCS - NUM_RUIDO} documentos secretos de {LONGITUD_EXACTA} chars...")
 
-textos_ruido.append(texto_secreto)
-ids_ruido.append(id_secreto)
+texto_secretos = []
+ids_secretos = []
 
-print(f"[*] Insertando {len(textos_ruido)} documentos en lotes de {TAMANO_LOTE}...")
+for i in range(NUM_RUIDO, NUM_DOCS):
 
-for i in range(0, len(textos_ruido), TAMANO_LOTE):
+    texto = generador_textos_aleatorios(vocabulario_rrhh)
 
-    lote_docs = textos_ruido[i : i + TAMANO_LOTE]
-    lote_ids = ids_ruido[i : i + TAMANO_LOTE]
+    texto_secretos.append(texto)
+    ids_secretos.append(f"doc_{i:0{NUM_DIGITOS}d}")
+
+
+textos_completos = textos_ruido + texto_secretos
+ids_completos = ids_ruido + ids_secretos
+
+print(f"[*] Insertando {len(textos_completos)} documentos en lotes de {TAMANO_LOTE}...")
+
+for i in range(0, len(textos_completos), TAMANO_LOTE):
+
+    lote_docs = textos_completos[i : i + TAMANO_LOTE]
+    lote_ids = ids_completos[i : i + TAMANO_LOTE]
 
     collection.add(
         documents=lote_docs,
@@ -120,7 +131,7 @@ print("[+] Base de datos poblada e indexada correctamente.\n")
 
 print("[*] Visualizando base de datos vectorial")
 
-visualizar_espacio_vectorial(collection, id_secreto)
+visualizar_espacio_vectorial(collection)
 
 print(f"[*] Iniciando bateria de ataques ({NUM_PRUEBAS} iteraciones por query)...")
 
