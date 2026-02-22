@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 import nltk
+import random
 
 NUM_DOCS = 301
 NUM_RUIDO = NUM_DOCS - (NUM_DOCS//4)
@@ -149,10 +150,13 @@ querys_fallo = [
 
 collection.query(query_embeddings=emb_fn([querys_fallo[3]]), n_results=5)
 
-for i in range(20):
+for i in range(NUM_PRUEBAS):
 
-    vector_acierto = emb_fn([querys_acierto[i]])
-    vector_fallo = emb_fn([querys_fallo[i]])
+    q_acierto = random.choice(querys_acierto)
+    q_fallo = random.choice(querys_fallo)
+
+    vector_acierto = emb_fn([q_acierto])
+    vector_fallo = emb_fn([q_fallo])
 
     inicio = time.perf_counter()
     _ = collection.query(query_embeddings=vector_fallo, n_results=5)
