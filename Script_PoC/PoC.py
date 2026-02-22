@@ -99,26 +99,70 @@ print(f"[*] Iniciando bateria de ataques ({NUM_PRUEBAS} iteraciones por query)..
 tiempos_acierto = []
 tiempos_fallo = []
 
-query_acierto = "¿Quién es el capitán del barco ballenero Pequod y a quién persigue?"
-query_fallo = "¿En qué casa de Hogwarts estudian Harry Potter y Ron Weasley?"
+querys_acierto = [
+    "¿Quién es el capitán del barco ballenero Pequod y a quién persigue?",
+    "¿Por qué cae Alicia por el agujero del conejo blanco?",
+    "¿Qué profecía le hacen las tres brujas a Macbeth en el páramo?",
+    "¿Cómo muere el fantasma del rey y qué le pide a su hijo?",
+    "¿Con quién se casa finalmente Emma Woodhouse?",
+    "¿Quién apuñala a Julio César en el Senado de Roma?",
+    "¿Cuál es el papel de Satanás al tentar a Eva en el jardín?",
+    "¿Qué animal del bosque acompaña siempre a Buster Bear?",
+    "¿Cómo resuelve el Padre Brown el misterio de la cruz azul?",
+    "¿Por qué el capitán Ahab tiene una pierna de marfil?",
+    "¿Qué locuras le dice el Sombrerero Loco a la niña durante la fiesta del té?",
+    "¿Qué ocurre con el cráneo del bufón Yorick en el cementerio?",
+    "¿Cómo convence Lady Macbeth a su marido para cometer el asesinato?",
+    "¿Qué relación de parentesco tienen Elinor y Marianne Dashwood?",
+    "¿Quién es el capitán Wentworth y por qué Anne lo rechazó años atrás?",
+    "¿Qué significa el canto a las hojas de hierba del poeta?",
+    "¿Por qué el sacerdote sospecha del famoso ladrón Flambeau?",
+    "¿Cómo describe el ángel la expulsión de Adán y Eva del paraíso?",
+    "¿Qué consejo le da la Oruga azul fumando en pipa a Alicia?",
+    "¿Cómo reacciona Bruto ante el fantasma de César antes de la batalla?"
+]
 
-vector_acierto = emb_fn([query_acierto])
-vector_fallo = emb_fn([query_fallo])
+querys_fallo = [
+    "¿En qué casa de Hogwarts estudian Harry Potter y Ron Weasley?",
+    "¿Cómo funciona el motor warp de la nave espacial Enterprise?",
+    "¿Quién destruye el Anillo Único en el Monte del Destino?",
+    "¿Cuál es la fórmula química para sintetizar plástico metacrilato?",
+    "¿Qué selección nacional ganó el mundial de fútbol en Sudáfrica 2010?",
+    "¿Cómo se entrena un modelo de lenguaje basado en arquitectura Transformers?",
+    "¿Quiénes son los caminantes blancos y cómo cruzan el muro de hielo?",
+    "¿Cuál fue la tasa de inflación media de la Unión Europea en 2023?",
+    "¿Cómo se instala la librería de React en un proyecto de Node.js?",
+    "¿Por qué el titán Thanos decide reunir las gemas del infinito?",
+    "¿Qué ingredientes exactos lleva la auténtica pizza margarita napolitana?",
+    "¿Cómo funciona la tecnología blockchain en las criptomonedas como Bitcoin?",
+    "¿Cuáles son los síntomas principales de la variante omicron del virus?",
+    "¿Qué ocurre al final de la película Matrix cuando Neo detiene las balas?",
+    "¿Cómo se configura un servidor virtual en la nube de Amazon AWS?",
+    "¿Quién fue el cantante principal y compositor de la banda de rock Queen?",
+    "¿Cuáles son los movimientos legales para hacer un enroque en ajedrez?",
+    "¿Qué propone la teoría de cuerdas en la física cuántica moderna?",
+    "¿Cómo realizan el proceso de fotosíntesis las plantas de interior sin luz directa?",
+    "¿Cuál fue el motivo político principal de la caída del muro de Berlín en 1989?"
+]
 
-collection.query(query_embeddings=vector_acierto, n_results=1)
 
 
-for i in range(NUM_PRUEBAS):
+collection.query(query_embeddings=emb_fn([querys_fallo[3]]), n_results=5)
 
-    inicio = time.perf_counter_ns()
+for i in range(20):
+
+    vector_acierto = emb_fn([querys_acierto[i]])
+    vector_fallo = emb_fn([querys_fallo[i]])
+
+    inicio = time.perf_counter()
     _ = collection.query(query_embeddings=vector_fallo, n_results=5)
-    fin = time.perf_counter_ns()
-    tiempos_fallo.append((fin - inicio) / 1000)
+    fin = time.perf_counter()
+    tiempos_fallo.append((fin - inicio) * 1000)
     
-    inicio = time.perf_counter_ns()
+    inicio = time.perf_counter()
     _ = collection.query(query_embeddings=vector_acierto, n_results=5)
-    fin = time.perf_counter_ns()
-    tiempos_acierto.append((fin - inicio) / 1000)
+    fin = time.perf_counter()
+    tiempos_acierto.append((fin - inicio) * 1000)
 
     print(f"Prueba {i}/{NUM_PRUEBAS}: Fallo: {tiempos_fallo[i]} Acierto: {tiempos_acierto[i]}")
 
