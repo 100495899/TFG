@@ -5,7 +5,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 import nltk
-from nltk.corpus import gutenberg
 
 NUM_DOCS = 301
 NUM_RUIDO = NUM_DOCS - (NUM_DOCS//4)
@@ -44,45 +43,52 @@ def visualizar_espacio_vectorial(collection):
 
 print("[*] Iniciando el Laboratorio de Ataque de Canal Lateral (Timing Attack)...")
 
-nltk.download('gutenberg', quiet=True)
-
-client = chromadb.EphemeralClient()
+ruta_bd = "./bd_tfg_local"
+client = chromadb.PersistentClient(path=ruta_bd)
 emb_fn = embedding_functions.DefaultEmbeddingFunction()
-collection = client.create_collection(name="tfg_rag_db", embedding_function=emb_fn)
 
-print("\n[*] Extrayendo y troceando los libros clásicos...")
-archivos_libros = gutenberg.fileids()
-textos_reales = []
+collection = client.get_or_create_collection(name="coleccion_nltk", embedding_function=emb_fn)
 
-for archivo in archivos_libros:
-    texto_completo = gutenberg.raw(archivo)
+if collection.count() == 0:
+    print("\n[!] La base de datos esta vacia. Procediendo a descargar y vectorizar...")
+    nltk.download('gutenberg', quiet=True)
+    from nltk.corpus import gutenberg
 
-    for i in range(0, len(texto_completo), 1000):
+    print("\n[*] Extrayendo y troceando los libros clasicos...")
+    archivos_libros = gutenberg.fileids()
+    textos_reales = []
 
-        trozo = texto_completo[i : i + 1000]
-        if len(trozo.strip()) > 50: 
-            textos_reales.append(trozo)
+    for archivo in archivos_libros:
+        texto_completo = gutenberg.raw(archivo)
+        for i in range(0, len(texto_completo), 1000):
+            trozo = texto_completo[i : i + 1000]
+            if len(trozo.strip()) > 50: 
+                textos_reales.append(trozo)
 
-print(f"[*] Hemos extraído {len(textos_reales)} fragmentos.")
+    print(f"[*] Hemos extraido {len(textos_reales)} fragmentos.")
 
-ids = [f"doc_{i:05d}" for i in range(len(textos_reales))]
+    ids = [f"doc_{i:07d}" for i in range(len(textos_reales))]
 
-print("\n[*] Vectorizando textos y guardando en ChromaDB.")
-inicio_insercion = time.perf_counter()
+    print("\n[*] Vectorizando textos y guardando en ChromaDB.")
+    inicio_insercion = time.perf_counter()
 
-for i in range(0, len(textos_reales), TAMANO_LOTE):
+    for i in range(0, len(textos_reales), TAMANO_LOTE):
 
-    fin_lote = min(i + TAMANO_LOTE, len(textos_reales))
+        fin_lote = min(i + TAMANO_LOTE, len(textos_reales))
 
-    collection.add(
-        documents=textos_reales[i:fin_lote],
-        ids=ids[i:fin_lote]
-    )
-    print(f"   [*] Insertados {fin_lote}/{len(textos_reales)} documentos...")
+        collection.add(
+            documents=textos_reales[i:fin_lote],
+            ids=ids[i:fin_lote]
+        )
+        print(f"   [*] Insertados {fin_lote}/{len(textos_reales)} documentos...")
 
-fin_insercion = time.perf_counter()
-print(f"[*] Base de datos lista en {fin_insercion - inicio_insercion:.2f} segundos.")
-print("[+] Base de datos poblada e indexada correctamente.\n")
+    fin_insercion = time.perf_counter()
+    print(f"[*] Base de datos lista en {fin_insercion - inicio_insercion:.2f} segundos.")
+    print("[+] Base de datos poblada e indexada correctamente.\n")
+
+else:
+    print(f"\n[+] ¡La base de datos ya existe en el disco duro!")
+    print(f"[+] Contiene {collection.count()} fragmentos. Saltando la fase de vectorización.")
 
 #print("[*] Visualizando base de datos vectorial")
 
@@ -107,12 +113,12 @@ for i in range(NUM_PRUEBAS):
     inicio = time.perf_counter_ns()
     _ = collection.query(query_embeddings=vector_fallo, n_results=5)
     fin = time.perf_counter_ns()
-    tiempos_fallo.append((fin - inicio) * 1000)
+    tiempos_fallo.append((fin - inicio) / 1000)
     
     inicio = time.perf_counter_ns()
     _ = collection.query(query_embeddings=vector_acierto, n_results=5)
     fin = time.perf_counter_ns()
-    tiempos_acierto.append((fin - inicio) * 1000)
+    tiempos_acierto.append((fin - inicio) / 1000)
 
     print(f"Prueba {i}/{NUM_PRUEBAS}: Fallo: {tiempos_fallo[i]} Acierto: {tiempos_acierto[i]}")
 
