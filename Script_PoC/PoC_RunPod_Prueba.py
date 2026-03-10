@@ -6,8 +6,65 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sentence_transformers import SentenceTransformer
 import random
+import itertools
+from sklearn.decomposition import PCA
+import umap
 
-NUM_PRUEBAS = 300
+NUM_PRUEBAS = 600
+
+def visualizar_espacio_vectorial_optimizado(collection, num_muestras=50000):
+    print(f"\n[*] Preparando visualización. Calculando tamaño total...")
+    total_docs = collection.count()
+    
+    if total_docs == 0:
+        print("[!] La colección está vacía.")
+        return
+        
+    limite = min(num_muestras, total_docs)
+    print(f"[*] Total en BD: {total_docs}. Extrayendo una muestra aleatoria ÚNICA de {limite} vectores...")
+
+    indices_unicos = random.sample(range(total_docs), limite)
+    ids_aleatorios = [f"doc_{i:09d}" for i in indices_unicos]
+    
+    print("[*] Descargando vectores de ChromaDB en lotes (para sortear el límite de SQLite)...")
+    todos_los_embeddings = []
+    tamano_lote = 5000 # Un número seguro que a SQLite le encanta
+    
+    # Bucle para descargar por viajes
+    for i in range(0, limite, tamano_lote):
+        lote_ids = ids_aleatorios[i : i + tamano_lote]
+        datos = collection.get(ids=lote_ids, include=['embeddings'])
+        todos_los_embeddings.extend(datos['embeddings'])
+        print(f"    -> Viaje completado: {min(i + tamano_lote, limite)} / {limite} vectores...")
+    
+    print("\n[*] Calculando el mapa topológico (UMAP)...")
+    reductor_umap = umap.UMAP(
+            n_neighbors=15, 
+            min_dist=0.1, 
+            n_components=2, 
+            metric='cosine', 
+            random_state=100495899
+        )
+    
+    vectores_2d = reductor_umap.fit_transform(todos_los_embeddings)
+    
+    print("[*] Dibujando los clústeres semánticos...")
+    plt.figure(figsize=(14, 10))
+    
+    plt.scatter(vectores_2d[:, 0], vectores_2d[:, 1], c='purple', alpha=0.15, s=2, edgecolors='none')
+    
+    plt.title(f"Mapa Semántico del Espacio Vectorial (UMAP - Muestra: {limite})")
+    plt.xlabel("Dimensión Topológica 1")
+    plt.ylabel("Dimensión Topológica 2")
+    
+    plt.xticks([]) 
+    plt.yticks([])
+    
+    ruta_imagen = "/workspace/mapa_semantico_umap.png"
+    plt.savefig(ruta_imagen, dpi=300, bbox_inches='tight', facecolor='white')
+    plt.close() 
+    
+    print(f"[+] ¡Éxito! El mapa semántico se ha guardado en: {ruta_imagen}")
 
 print("[*] Conectando a la base de datos en /workspace/pg19")
 client = chromadb.PersistentClient(path="./workspace/pg19")
@@ -20,106 +77,54 @@ print(f"[+] Coleccion cargada. Total de vectores en la BD: {collection.count()}"
 print("[*] Cargando modelo de embeddings (all-MiniLM-L6-v2)...")
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
-'''total_vectores = collection.count()
-indices_aleatorios = random.sample(range(total_vectores), 150)
 
-ids_a_buscar = [f"doc_{i:07d}" for i in indices_aleatorios]
-
-resultados_azar = collection.get(ids=ids_a_buscar)
-querys_acierto = resultados_azar['documents']'''
-
-querys_acierto = [
-    "En un lugar de la Mancha, de cuyo nombre no quiero acordarme.",
-    "Con diez cañones por banda, viento en popa, a toda vela.",
-    "Pues el delito mayor del hombre es haber nacido.",
-    "Volverán las oscuras golondrinas en tu balcón sus nidos a colgar.",
-    "La heroica ciudad dormía la siesta. El viento sur, caliente y perezoso.",
-    "Yo, señor, soy de Segovia. Mi padre se llamó Clemente Pablo.",
-    "Caminante, no hay camino, se hace camino al andar.",
-    "¿Qué es poesía? Dices mientras clavas en mi pupila tu pupila azul.",
-    "Es hielo abrasador, es fuego helado, es herida que duele y no se siente.",
-    "Señor, yo soy un hombre, un hombre de carne y hueso.",
-    "Érase un hombre a una nariz pegado, érase una nariz superlativa.",
-    "Coged de vuestra alegre primavera el dulce fruto antes que el tiempo airado.",
-    "Cuentan de un sabio que un día tan pobre y mísero estaba.",
-    "El ciego me dio una gran calabazada contra el toro de piedra.",
-    "Las ilusiones perdidas son hojas desprendidas del árbol del corazón.",
-    "Aquella noche el mar estaba embravecido y las olas golpeaban las rocas.",
-    "El caballero andante sin amores es árbol sin hojas y sin fruto.",
-    "¿Qué es la vida? Un frenesí. ¿Qué es la vida? Una ilusión.",
-    "Salí de mi casa con la firme intención de no volver jamás.",
-    "Los suspiros son aire y van al aire. Las lágrimas son agua y van al mar.",
-    "Al que a buen árbol se arrima, buena sombra le cobija.",
-    "La avaricia rompe el saco, como suele decirse habitualmente.",
-    "Vuestra merced perdone mi atrevimiento, pero la necesidad me obliga.",
-    "Todo pasa y todo queda, pero lo nuestro es pasar.",
-    "El amor es un misterio que no puede ser explicado por la fría razón.",
-    "La fortuna es un cristal que brilla, pero que también se quiebra fácilmente.",
-    "Un hidalgo de los de lanza en astillero, adarga antigua, rocín flaco.",
-    "En las noches de invierno, al calor de la lumbre, se contaban historias antiguas.",
-    "La doncella lloraba amargamente su desdicha en el balcón del oscuro palacio.",
-    "Los soldados marchaban al frente con el corazón encogido por el miedo.",
-    "Por la calle mayor bajaba una procesión solemne y silenciosa.",
-    "La vieja preparaba sus pócimas y hechizos en la oscuridad de su aposento.",
-    "Sancho, amigo, la libertad es uno de los más preciados dones.",
-    "El sol caía a plomo sobre las llanuras polvorientas de Castilla.",
-    "Las campanas de la catedral repicaban anunciando la gran festividad.",
-    "En el fondo de su alma, sabía que su destino estaba escrito en las estrellas.",
-    "Levantó la espada con valentía dispuesto a defender el honor de su linaje.",
-    "Las oscuras calles de Madrid albergaban conspiraciones y duelos a muerte.",
-    "Una lágrima resbaló por su mejilla al leer la carta de su amado.",
-    "La taberna estaba llena de truhanes, soldados y mendigos buscando refugio."
+palabras_acierto = [
+    "the", "of", "and", "to", "a", "in", "i", "that", "was", "his",
+    "is", "as", "with", "for", "you", "had", "he", "not", "but", "at",
+    "be", "by", "which", "this", "have", "from", "him", "or", "were",
+    "we", "one", "are", "an", "their", "there", "when", "been", "who", "will",
+    "would", "what", "out", "more", "if", "man", "no", "so", "#amp", "said",
+    "could", "very", "some", "your", "time", "up", "upon",
+    "can", "only", "about"
 ]
 
-querys_fallo = [
-    "El smartphone tiene conectividad 5G y pantalla OLED.",
-    "Criptomonedas y tecnología blockchain en el metaverso.",
-    "Programación en Python con inteligencia artificial y machine learning.",
-    "El coche eléctrico de Tesla con piloto automático espacial.",
-    "Un streamer de Twitch jugando a videojuegos de realidad virtual.",
-    "Los astronautas llegaron a Marte usando cohetes reutilizables.",
-    "Aplicación móvil para pedir comida a domicilio por internet.",
-    "Algoritmos de cifrado cuántico para ciberseguridad avanzada.",
-    "El uso de redes sociales como TikTok e Instagram por influencers.",
-    "Impresión 3D de órganos humanos para trasplantes biónicos.",
-    "Nanotecnología aplicada a procesadores de 3 nanómetros.",
-    "Gafas de realidad aumentada para el teletrabajo en Zoom.",
-    "Baterías de litio de estado sólido para patinetes eléctricos.",
-    "El algoritmo de recomendación de Netflix y Spotify.",
-    "Drones autónomos entregando paquetes de Amazon Prime.",
-    "Edición genética con CRISPR para crear dinosaurios.",
-    "El protocolo TCP/IP para redes WiFi de alta velocidad.",
-    "Smartwatches que miden el oxígeno en sangre por Bluetooth.",
-    "Un hacker vulnerando un servidor en la nube con ransomware.",
-    "Inteligencia artificial generativa creando imágenes fotorrealistas.",
-    "El router wifi de mi casa no tiene buena cobertura.",
-    "Auriculares con cancelación de ruido activa.",
-    "Un monitor ultra panorámico de 144hz para gaming.",
-    "Conectando un disco duro externo por puerto USB-C.",
-    "La tarjeta gráfica RTX 4090 tiene mucha memoria VRAM.",
-    "Desarrollo de aplicaciones web usando React y Node.",
-    "Un sistema operativo basado en el kernel de Linux.",
-    "Comprando billetes de avión baratos en un portal web.",
-    "El asistente virtual de Google responde a comandos de voz.",
-    "Escuchando un podcast de tecnología en Spotify.",
-    "El coche híbrido consume menos gasolina en ciudad.",
-    "Una tablet con lápiz táctil para diseño gráfico.",
-    "Subiendo archivos a la nube de Google Drive.",
-    "Una videollamada de trabajo a través de Microsoft Teams.",
-    "El reloj inteligente cuenta mis pasos diarios.",
-    "Un teclado mecánico con luces RGB personalizables.",
-    "La pantalla táctil del cajero automático está rota.",
-    "Un cargador inalámbrico de carga rápida para el móvil.",
-    "La base de datos en SQL está alojada en un servidor.",
-    "Un panel solar portátil para cargar dispositivos electrónicos."
+palabras_fallo = [
+    "ashjfhwiuhrt", "plorvex", "drimtal", "zunthera", "krevon", "lintora",
+    "shavix", "brontel", "virexon", "talnori", "zempra", "florvyn",
+    "kradim", "yenthor", "plavion", "drastel", "monvira", "xentari",
+    "zolmira", "trivon", "blanter", "shorvex", "prantel", "vornika",
+    "xelvorn", "drimora", "quintal", "zervion", "plenthor", "arvinta",
+    "krovent", "limvora", "traxion", "blenvar", "sorvinta", "prelthor",
+    "zanviro", "crontel", "velnira", "droxen", "shalvorn", "prastel",
+    "zonther", "vrelmira", "klentor", "drivon", "morxina", "veltrix",
+    "zanthir", "plorxen", "trivora", "xeltrum", "bravion", "sornika",
+    "klavira", "prontel", "dravion", "selthora", "vrontex", "plimora",
+    "krenthor", "zalmira", "trovina", "blenxar"
 ]
 
+querys_acierto = []
+
+querys_fallo = []
+
+NUM_QUERYS = 50
+LONGITUD_PALABRAS_FALLO = 10
+LONGITUD_PALABRAS_ACIERTO = 15
+
+print("[*] Generando queries aleatorias de prueba...")
+
+for _ in range(NUM_QUERYS):
+    query_acierto = " ".join(random.choices(palabras_acierto, k=LONGITUD_PALABRAS_ACIERTO))
+    querys_acierto.append(query_acierto)
+
+    query_fallo = " ".join(random.choices(palabras_fallo, k=LONGITUD_PALABRAS_FALLO))
+    querys_fallo.append(query_fallo)
 
 tiempos_acierto = []
 tiempos_fallo = []
 
+#visualizar_espacio_vectorial_optimizado(collection)
 
-print(f"[*] Iniciando ataque midiendo latencias de busqueda (40 Aciertos vs 40 Fallos)...")
+print(f"[*] Iniciando ataque midiendo latencias de busqueda")
 
 for i in range(NUM_PRUEBAS):
     q_acierto = random.choice(querys_acierto)
