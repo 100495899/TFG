@@ -66,6 +66,39 @@ def visualizar_espacio_vectorial_optimizado(collection, num_muestras=50000):
     
     print(f"[+] ¡Éxito! El mapa semántico se ha guardado en: {ruta_imagen}")
 
+
+def ejecutar_bateria_pruebas(querys, model, collection, num_pruebas, nombre_prueba):
+
+    tiempos = []
+    print(f"\n[*] Iniciando batería de pruebas: {nombre_prueba} ({num_pruebas} iteraciones)")
+    
+    for i in range(num_pruebas):
+        # 1. Elegir query al azar y vectorizar FUERA del tiempo
+        q = random.choice(querys)
+        print(f"Querie {i + 1}: {q}")
+        vector_query = model.encode([q]).tolist()
+        
+        # 2. Medición pura de latencia en ChromaDB
+        inicio = time.perf_counter()
+        _ = collection.query(query_embeddings=vector_query, n_results=5)
+        fin = time.perf_counter()
+        
+        tiempos.append((fin - inicio) * 1000)
+        
+        # Mostrar progreso por consola cada 100 iteraciones
+       
+        print(f" -> Progreso: {i+1}/{num_pruebas} Tiempo: {(fin - inicio) * 1000}")
+            
+    # 3. Limpieza estadística (Percentil 99)
+    limite = np.percentile(tiempos, 99)
+    tiempos_limpios = [t for t in tiempos if t <= limite]
+    
+    picos_borrados = len(tiempos) - len(tiempos_limpios)
+    media = np.mean(tiempos_limpios)
+    print(f"  [+] Batería terminada. Media: {media:.4f} ms (Picos filtrados: {picos_borrados})")
+    
+    return tiempos_limpios
+
 print("[*] Conectando a la base de datos en /workspace/pg19")
 client = chromadb.PersistentClient(path="./workspace/pg19")
 
@@ -78,130 +111,133 @@ print("[*] Cargando modelo de embeddings (all-MiniLM-L6-v2)...")
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
 
-palabras_acierto = [
-    "the", "of", "and", "to", "a", "in", "i", "that", "was", "his",
-    "is", "as", "with", "for", "you", "had", "he", "not", "but", "at",
-    "be", "by", "which", "this", "have", "from", "him", "or", "were",
-    "we", "one", "are", "an", "their", "there", "when", "been", "who", "will",
-    "would", "what", "out", "more", "if", "man", "no", "so", "#amp", "said",
-    "could", "very", "some", "your", "time", "up", "upon",
-    "can", "only", "about"
+querys_alta = [
+    "A man spending his day thinking about things.",
+    "The man worked all day to build that thing.",
+    "Every day the man found a new thing to do.",
+    "That thing took the man a whole day to finish.",
+    "A young man looking at a strange thing during the day.",
+    "The old man looked at the house with his eyes.",
+    "A time will come when the man sees the light of day.",
+    "The eyes of the man showed he had no time.",
+    "Nothing is a better thing for a man than a good day.",
+    "He spent a long time looking at the thing in the house.",
+    "The man opened his eyes and saw the day.",
+    "Time passes fast when a man is busy with a thing.",
+    "Every man needs a house to live in one day.",
+    "The thing in the house caught the eye of the man.",
+    "Day after day, the man gave his time to the house."
 ]
 
-palabras_fallo = [
-    "ashjfhwiuhrt", "plorvex", "drimtal", "zunthera", "krevon", "lintora",
-    "shavix", "brontel", "virexon", "talnori", "zempra", "florvyn",
-    "kradim", "yenthor", "plavion", "drastel", "monvira", "xentari",
-    "zolmira", "trivon", "blanter", "shorvex", "prantel", "vornika",
-    "xelvorn", "drimora", "quintal", "zervion", "plenthor", "arvinta",
-    "krovent", "limvora", "traxion", "blenvar", "sorvinta", "prelthor",
-    "zanviro", "crontel", "velnira", "droxen", "shalvorn", "prastel",
-    "zonther", "vrelmira", "klentor", "drivon", "morxina", "veltrix",
-    "zanthir", "plorxen", "trivora", "xeltrum", "bravion", "sornika",
-    "klavira", "prontel", "dravion", "selthora", "vrontex", "plimora",
-    "krenthor", "zalmira", "trovina", "blenxar"
+querys_synonyms = [
+    "A person spending his morning thinking about many things.",
+    "The individual worked all hours to build that object.",
+    "Every morning the guy found a new task to do.",
+    "That object took the fellow a whole afternoon to finish.",
+    "A young person looking at a strange item during the daytime.",
+    "The old fellow looked at the house with his eyes.",
+    "A moment will come when the person sees the morning light.",
+    "The eyes of the individual showed he had no moment to spare.",
+    "Nothing is a better object for a person than a calm morning.",
+    "He spent a long period looking at the item in the house.",
+    "The guy opened his eyes and saw the daylight.",
+    "Hours pass fast when a person is busy with an object.",
+    "Every individual needs a house to live in one morning.",
+    "The item in the house caught the eye of the fellow.",
+    "Morning after morning, the person gave his hours to the house.",
+    "The human watched the daylight fade after a long period."
 ]
 
-querys_acierto = []
+querys_media = [
+    "He went to visit his old friend in the country.",
+    "A true friend will always be by your side.",
+    "She wrote a long letter to her best friend.",
+    "Meeting a loyal friend after many years apart.",
+    "They remained good friends for their entire lives.",
+    "My dear friend sent a short letter yesterday.",
+    "Finding a new friend can change your life.",
+    "The two friends walked together through the forest.",
+    "A kind friend is a treasure to keep.",
+    "She smiled when she saw her childhood friend.",
+    "Trusting a friend is easy when they are honest.",
+    "His friend helped him carry the heavy boxes.",
+    "We invited a close friend over for dinner.",
+    "Every person needs a friend to talk to.",
+    "The letter from my friend brought good news."
+]
 
-querys_fallo = []
-
-NUM_QUERYS = 50
-LONGITUD_PALABRAS_FALLO = 10
-LONGITUD_PALABRAS_ACIERTO = 15
-
-print("[*] Generando queries aleatorias de prueba...")
-
-for _ in range(NUM_QUERYS):
-    query_acierto = " ".join(random.choices(palabras_acierto, k=LONGITUD_PALABRAS_ACIERTO))
-    querys_acierto.append(query_acierto)
-
-    query_fallo = " ".join(random.choices(palabras_fallo, k=LONGITUD_PALABRAS_FALLO))
-    querys_fallo.append(query_fallo)
-
-tiempos_acierto = []
-tiempos_fallo = []
+querys_nula = [
+    "Sauron rules the dark land of Mordor with his ring.",
+    "Oil rigs and modern tankers located in the Persian Gulf.",
+    "People dancing the lambada at a modern discotheque.",
+    "Cooking delicious spicy creole sausages on a barbecue grill.",
+    "Playing multiplayer video games on a wifi router connection.",
+    "A software developer debugging python code on a laptop.",
+    "Astronauts repairing solar panels on the international space station.",
+    "Calling an Uber to go to the international airport terminal.",
+    "Installing a high-end graphics card in the motherboard.",
+    "Streaming a Netflix documentary on a smartphone display.",
+    "A cybersecurity hacker bypassing the firewall of the database server.",
+    "Eating avocado toast while listening to a Spotify podcast.",
+    "A blockchain cryptocurrency transaction using Bitcoin wallets.",
+    "Sending a quick WhatsApp message with a funny emoji.",
+    "A Jedi using a lightsaber to defeat Darth Vader in the Death Star."
+]
 
 #visualizar_espacio_vectorial_optimizado(collection)
 
+print("\n[*] Calentando el motor HNSW...")
+_ = collection.query(query_embeddings=model.encode(["hello world"]).tolist(), n_results=1)
+
 print(f"[*] Iniciando ataque midiendo latencias de busqueda")
 
-for i in range(NUM_PRUEBAS):
-    q_acierto = random.choice(querys_acierto)
-    q_fallo = random.choice(querys_fallo)
+tiempos_alta = ejecutar_bateria_pruebas(querys_alta, model, collection, NUM_PRUEBAS, "Alta Frecuencia")
+tiempos_sinonimo = ejecutar_bateria_pruebas(querys_synonyms, model, collection, NUM_PRUEBAS, "Sinonimos")
+tiempos_media = ejecutar_bateria_pruebas(querys_media, model, collection, NUM_PRUEBAS, "Media Frecuencia")
+tiempos_nula = ejecutar_bateria_pruebas(querys_nula, model, collection, NUM_PRUEBAS, "Nula Frecuencia")
 
-    vector_acierto = model.encode([q_acierto]).tolist()
-    vector_fallo = model.encode([q_fallo]).tolist()
-
-    inicio = time.perf_counter()
-    _ = collection.query(query_embeddings=vector_fallo, n_results=5)
-    fin = time.perf_counter()
-    tiempos_fallo.append((fin - inicio) * 1000)
-    
-    inicio = time.perf_counter()
-    _ = collection.query(query_embeddings=vector_acierto, n_results=5)
-    fin = time.perf_counter()
-    tiempos_acierto.append((fin - inicio) * 1000)
-
-    # Imprimir progreso por terminal
-    print(f"Prueba {i+1}/{NUM_PRUEBAS}: Fallo: {tiempos_fallo[i]:.4f} ms | Acierto: {tiempos_acierto[i]:.4f} ms")
 
 print("\n[+] Ataque finalizado. Generando analisis estadistico...")
 
+# 4. Cálculo de medias para la gráfica
+m_alta = np.mean(tiempos_alta)
+m_sinonimo = np.mean(tiempos_sinonimo)
+m_media = np.mean(tiempos_media)
+m_nula = np.mean(tiempos_nula)
 
-media_acierto = np.mean(tiempos_acierto)
-media_fallo = np.mean(tiempos_fallo)
-mediana_acierto = np.median(tiempos_acierto)
-mediana_fallo = np.median(tiempos_fallo)
-
-todos_los_tiempos = tiempos_acierto + tiempos_fallo
-limite_superior = np.percentile(todos_los_tiempos, 99)
-
-aciertos_limpios = [t for t in tiempos_acierto if t <= limite_superior]
-fallos_limpios = [t for t in tiempos_fallo if t <= limite_superior]
-
-media_a = np.mean(aciertos_limpios)
-media_f = np.mean(fallos_limpios)
-mediana_a = np.median(aciertos_limpios)
-mediana_f = np.median(fallos_limpios)
-
-print(f"    -> Se han filtrado {len(tiempos_acierto) - len(aciertos_limpios)} picos en aciertos.")
-print(f"    -> Se han filtrado {len(tiempos_fallo) - len(fallos_limpios)} picos en fallos.")
-
-t_stat, p_value = stats.ttest_ind(aciertos_limpios, fallos_limpios)
+t_stat, p_value = stats.ttest_ind(tiempos_alta, tiempos_nula)
 
 print("\n======== RESULTADOS =========")
-print("------------Sin Limpiar---------------")
-print(f"Media Acierto: {media_acierto:.4f} ms")
-print(f"Media Fallo: {media_fallo:.4f} ms")
-print(f"Diferencia Media: {abs(media_acierto - media_fallo):.4f} ms")
-print(f"Mediana Acierto: {mediana_acierto:.4f} ms")
-print(f"Mediana Fallo: {mediana_fallo:.4f} ms")
-print(f"Diferencia Mediana: {abs(mediana_acierto - mediana_fallo):.4f} ms")
+print(f"1. Alta Freq: {m_alta:.4f} ms")
+print(f"2. Freq Media: {m_media:.4f} ms")
+print(f"3. Freq Nula: {m_nula:.4f} ms")
+print(f"4. Freq Sinonimo: {m_sinonimo:.4f} ms")
 
-print("------------Limpio---------------")
-print(f"Media Acierto: {media_a:.4f} ms")
-print(f"Media Fallo: {media_f:.4f} ms")
-print(f"Diferencia Media: {abs(media_a - media_f):.4f} ms")
-print(f"Mediana Acierto: {mediana_a:.4f} ms")
-print(f"Mediana Fallo: {mediana_f:.4f} ms")
-print(f"Diferencia Mediana: {abs(mediana_a - mediana_f):.4f} ms")
+print(f"Diferencia Alta-Nula: {abs(m_alta - m_nula):.4f} ms")
 
 print("--- ANALISIS DE SIGNIFICANCIA (P-VALUE) ---")
 print(f"P-Value: {p_value:.10f}")
 
-plt.figure(figsize=(10, 6))
-sns.kdeplot(aciertos_limpios, fill=True, color="red", label=f"Acierto (Media: {media_a:.2f} ms)", alpha=0.5)
-sns.kdeplot(fallos_limpios, fill=True, color="blue", label=f"Fallo (Media: {media_f:.2f} ms)", alpha=0.5)
-plt.axvline(media_a, color='darkred', linestyle='dashed', linewidth=2)
-plt.axvline(media_f, color='darkblue', linestyle='dashed', linewidth=2)
-plt.title('Distribución de Latencias de Búsqueda Vectorial (ChromaDB HNSW)')
+# 5. Generación de la Gráfica con Seaborn
+plt.figure(figsize=(12, 7))
+
+sns.kdeplot(tiempos_alta, fill=True, color="red", label=f"Alta Frecuencia (Media: {m_alta:.2f} ms)", alpha=0.4)
+sns.kdeplot(tiempos_media, fill=True, color="orange", label=f"Media Frecuencia (Media: {m_media:.2f} ms)", alpha=0.4)
+sns.kdeplot(tiempos_nula, fill=True, color="green", label=f"Fuera de Dominio (Media: {m_nula:.2f} ms)", alpha=0.4)
+sns.kdeplot(tiempos_sinonimo, fill=True, color="blue", label=f"Sinonimos (Media: {m_sinonimo:.2f} ms)", alpha=0.4)
+
+plt.axvline(m_alta, color='darkred', linestyle='dashed', linewidth=2)
+plt.axvline(m_media, color='darkorange', linestyle='dashed', linewidth=2)
+plt.axvline(m_nula, color='darkgreen', linestyle='dashed', linewidth=2)
+plt.axvline(m_sinonimo, color='darkblue', linestyle='dashed', linewidth=2)
+
+plt.title('Prueba basada en Densidad Semántica', fontsize=14)
 plt.xlabel('Tiempo de Búsqueda (Milisegundos)', fontsize=12)
 plt.ylabel('Densidad de Probabilidad', fontsize=12)
 plt.legend(loc="upper right")
 plt.grid(True, linestyle='--', alpha=0.5)
 plt.tight_layout()
 
-plt.savefig('grafica_resultados_runpod.png', dpi=300)
-print("\n[+] Grafica guardada como 'grafica_resultados_runpod.png'")
-plt.show()
+ruta_grafica = 'grafica_latencia_semantica_local.png'
+plt.savefig(ruta_grafica, dpi=300)
+print(f"\n[+] Gráfica guardada exitosamente como '{ruta_grafica}'")
