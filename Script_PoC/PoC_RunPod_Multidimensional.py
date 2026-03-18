@@ -10,83 +10,89 @@ from scipy import stats
 import pandas as pd
 from typing import Dict, List, Tuple
 import os
+import random
+
 
 # Configuración del experimento
-K_VALUES = [5, 50, 100]
+K_VALUES = [5, 50, 100, 200]
 FRECUENCIAS = ['alta_frecuencia', 'media_frecuencia', 'baja_frecuencia']
 LONGITUDES = ['corta', 'media', 'larga']
 DATABASE_PATH = "./workspace/pg19"
 COLLECTION_NAME = "gutenberg_completo"
 QUERIES_FILE = "Querys.json"
 DIRECTORIO_SALIDA = "./resultados"
+NUM_ITERACIONES = 30
+N_FREQ = {'alta_frecuencia': 'High', 'media_frecuencia': 'Medium', 'baja_frecuencia': 'Low'}
+N_LONG = {'corta': 'Short', 'media': 'Medium', 'larga': 'Long'}
 
 
-
-def prueba_latencia(collection, model, queries: Dict, k: int, total_queries: int) -> Dict:
+def prueba_latencia(collection, model, queries: Dict, k: int, num_iteraciones: int) -> Dict:
     """
-    Ejecutamos todas las queries para un valor específico de k
-    Devolvemos un diccionario con los tiempos organizados por frecuencia y longitud
+    Ejecuta todas las queries mezcladas aleatoriamente durante N iteraciones
+    para evitar el sesgo de caché de ChromaDB.
     """
-    results = {}
+    print(f"\n[*] Preparando y vectorizando TODAS las queries para k={k}...")
+    todas_las_queries = []
 
-    # Desactivamos el recolector de basura durante las mediciones
+    # 1. Vectorizamos todo antes de medir para aislar el tiempo de la base de datos
+    for frecuencia in FRECUENCIAS:
+        for longitud in LONGITUDES:
+            lista_textos = queries[frecuencia][longitud]
+            vectores = model.encode(lista_textos).tolist()
+            
+            # Guardamos el vector junto con su "etiqueta" para saber a qué categoría pertenece
+            for vector in vectores:
+                todas_las_queries.append((vector, frecuencia, longitud))
+
+    total_queries_por_iteracion = len(todas_las_queries)
+    
+    # Aquí guardaremos TODOS los tiempos de las 30 iteraciones juntos
+    tiempos_brutos = {f: {l: [] for l in LONGITUDES} for f in FRECUENCIAS}
+
     gc.disable()
-
     try:
-        contador_queries = 0
-
-        for frecuencia in FRECUENCIAS:
-            results[frecuencia] = {}
-            for longitud in LONGITUDES:
-                print(f"    -> Procesando {frecuencia} - {longitud}")
-                lista_queries = queries[frecuencia][longitud]
-                tiempos = []
-
-                # Vectorizamos todas las queries antes de medir
-                print(f"       Vectorizando {len(lista_queries)} queries")
-                vectores = model.encode(lista_queries).tolist()
-
-                # Medimos latencia para cada query
-                print(f"       Midiendo latencias")
-                for i, vector in enumerate(vectores):
-                    inicio = time.perf_counter()
-                    _ = collection.query(query_embeddings=vector, n_results=k)
-                    fin = time.perf_counter()
-                    latencia = (fin - inicio) * 1000
-                    tiempos.append(latencia)
-                    contador_queries += 1
-
-                    # Mostramos el progreso cada 50 queries
-                    if (i + 1) % 50 == 0:
-                        print(f"         Progreso: {i+1}/{len(lista_queries)} queries")
-
-                # Limpiamos los datos con percentil para eliminar outliers
+        for iteracion in range(num_iteraciones):
+            print(f"    -> Iteración {iteracion + 1}/{num_iteraciones}...")
+            
+            # 2. Mezclamos el orden aleatoriamente en cada iteración
+            random.shuffle(todas_las_queries)
+            
+            # 3. Ejecutamos las queries en el nuevo orden
+            for i, (vector, freq, long) in enumerate(todas_las_queries):
+                inicio = time.perf_counter()
+                _ = collection.query(query_embeddings=vector, n_results=k)
+                fin = time.perf_counter()
+                
+                latencia = (fin - inicio) * 1000
+                tiempos_brutos[freq][long].append(latencia)
+                
+                # Mostramos progreso cada 1000 queries para no saturar la consola
+                if (i + 1) % 50 == 0:
+                    print(f"        Progreso iteración {iteracion+1}: {i+1}/{total_queries_por_iteracion} queries")
+        # 4. Limpiamos y estructuramos los resultados para que las gráficas funcionen igual
+        print("    -> Procesando y filtrando resultados estadísticos...")
+        results = {}
+        for freq in FRECUENCIAS:
+            results[freq] = {}
+            for long in LONGITUDES:
+                tiempos = tiempos_brutos[freq][long]
+                
+                # Filtramos outliers (el 1% más lento)
                 limite = np.percentile(tiempos, 99)
                 tiempos_limpios = [t for t in tiempos if t <= limite]
-                outliers = len(tiempos) - len(tiempos_limpios)
-
-                # Guardar resultados
-                results[frecuencia][longitud] = {
+                
+                results[freq][long] = {
                     'tiempos_sucios': tiempos,
                     'tiempos_limpios': tiempos_limpios,
                     'media': np.mean(tiempos_limpios),
                     'mediana': np.median(tiempos_limpios),
                     'std': np.std(tiempos_limpios),
-                    'outliers': outliers
+                    'outliers': len(tiempos) - len(tiempos_limpios)
                 }
-
-                print(f"       Completado: Media={results[frecuencia][longitud]['media']:.3f}ms, "
-                      f"Outliers filtrados={outliers}")
-
-                # Enseñamos el progreso total
-                progreso = (contador_queries / total_queries) * 100
-                print(f"    [Progreso Total: {contador_queries}/{total_queries} ({progreso:.1f}%)]")
 
     except Exception as e:
         print(f"Error durante la prueba: {e}")
-
     finally:
-        Reactivamos el recolector de basura después de las mediciones
         gc.enable()
         gc.collect()
 
@@ -97,7 +103,7 @@ def generar_graficas_densidad(resultados_completos: Dict):
 
     for k, results in resultados_completos.items():
         fig, axes = plt.subplots(3, 3, figsize=(18, 15))
-        fig.suptitle(f'Distribucion de Latencias - k={k}', fontsize=16, fontweight='bold')
+        fig.suptitle(f'Latency Distribution - k={k}', fontsize=16, fontweight='bold')
 
         for i, frecuencia in enumerate(FRECUENCIAS):
             for j, longitud in enumerate(LONGITUDES):
@@ -110,12 +116,12 @@ def generar_graficas_densidad(resultados_completos: Dict):
                 # Añadimos línea vertical para la media
                 media = results[frecuencia][longitud]['media']
                 ax.axvline(media, color='red', linestyle='--', linewidth=2,
-                          label=f'Media: {media:.2f}ms')
+                          label=f'Mean: {media:.2f}ms')
 
                 # Configuramos el subplot
-                ax.set_title(f'{frecuencia.replace("_", " ").title()} - {longitud.title()}')
-                ax.set_xlabel('Latencia (ms)')
-                ax.set_ylabel('Densidad')
+                ax.set_title(f'{N_FREQ[frecuencia]} Frequency - {N_LONG[longitud]}')
+                ax.set_xlabel('Latency (ms)')
+                ax.set_ylabel('Density')
                 ax.legend()
                 ax.grid(True, alpha=0.3)
 
@@ -134,7 +140,7 @@ def generar_graficas_densidad2(resultados_completos: Dict):
     for k in K_VALUES:
         # Creamos una figura con 3 subplots en horizontal (1 fila, 3 columnas)
         fig, axes = plt.subplots(1, 3, figsize=(18, 6))
-        fig.suptitle(f'Comparativa de Densidad de Latencias superpuestas - Top-K = {k}', fontsize=16, fontweight='bold')
+        fig.suptitle(f'Overlaid Latency Density Comparison - Top-K = {k}', fontsize=16, fontweight='bold')
 
         # Iteramos primero por la longitud para que cada cuadro sea una longitud
         for j, longitud in enumerate(LONGITUDES):
@@ -146,18 +152,18 @@ def generar_graficas_densidad2(resultados_completos: Dict):
                 datos = resultados_completos[k][frecuencia][longitud]['tiempos_limpios']
                 
                 # Limpiamos el nombre para que la leyenda quede bonita (ej: "Alta")
-                nombre_leyenda = frecuencia.replace('_frecuencia', '').title()
+                nombre_leyenda = N_FREQ[frecuencia]
                 
                 # Dibujamos la curva. alpha=0.4 le da la transparencia para que se vean todas
                 sns.kdeplot(data=datos, ax=ax, fill=True, alpha=0.4, label=nombre_leyenda)
 
             # Configuración estética de cada cuadro
-            ax.set_title(f'Longitud de Query: {longitud.title()}', fontsize=14)
-            ax.set_xlabel('Latencia (ms)')
-            ax.set_ylabel('Densidad')
+            ax.set_title(f'Length of Query: {N_LONG[longitud]}', fontsize=14)
+            ax.set_xlabel('Latency (ms)')
+            ax.set_ylabel('Density')
             
             # Ponemos la leyenda para saber qué color es cada frecuencia
-            ax.legend(title="Frecuencia", loc='upper right')
+            ax.legend(title="Frequency", loc='upper right')
             ax.grid(True, alpha=0.3)
 
         # Ajustamos espacios y guardamos
@@ -184,7 +190,7 @@ def generar_diagramas_caja(resultados_completos: Dict):
                 datos_caja.append(tiempos)
                 
                 # Creamos una etiqueta corta para el eje X
-                etiquetas.append(f"{frecuencia.split('_')[0].title()[:4]}\n{longitud.title()[:4]}")
+                etiquetas.append(f"{N_FREQ[frecuencia][:4]}\n{N_LONG[longitud][:4]}")
         
         # Creamos la figura
         fig, ax = plt.subplots(figsize=(14, 7))
@@ -194,9 +200,9 @@ def generar_diagramas_caja(resultados_completos: Dict):
         
         # Configuramos el gráfico
         ax.set_xticklabels(etiquetas)
-        ax.set_title(f'Dispersión de Latencias (Box & Whisker) - Top-K = {k}', fontsize=14, fontweight='bold')
-        ax.set_xlabel('Configuración (Frecuencia - Longitud)', fontsize=12)
-        ax.set_ylabel('Latencia (ms)', fontsize=12)
+        ax.set_title(f'Latency Dispersion (Box & Whisker) - Top-K = {k}', fontsize=14, fontweight='bold')
+        ax.set_xlabel('Configuration (Frequency - Length)', fontsize=12)
+        ax.set_ylabel('Latency (ms)', fontsize=12)
         ax.grid(True, axis='y', alpha=0.3)
         
         plt.tight_layout()
@@ -219,10 +225,10 @@ def generar_grafica_comparativa(resultados_completos: Dict):
                 media = resultados_completos[k][frecuencia][longitud]['media']
                 datos_grafica.append({
                     'k': k,
-                    'Frecuencia': frecuencia.replace('_frecuencia', '').title(),
-                    'Longitud': longitud.title(),
-                    'Latencia (ms)': media,
-                    'Configuración': f"{frecuencia.split('_')[0][:3]}-{longitud[:3]}"
+                    'Frequency': N_FREQ[frecuencia],
+                    'Length': N_LONG[longitud],
+                    'Latency (ms)': media,
+                    'Configuration': f"{N_FREQ[frecuencia][:3]}-{N_LONG[longitud][:3]}"
                 })
 
     df = pd.DataFrame(datos_grafica)
@@ -232,11 +238,11 @@ def generar_grafica_comparativa(resultados_completos: Dict):
 
     # Configuramos posiciones de las barras
     x = np.arange(len(FRECUENCIAS) * len(LONGITUDES))
-    ancho_barra = 0.25
-
+    ancho_barra = 0.8 / len(K_VALUES)
+    
     for i, k in enumerate(K_VALUES):
         k_data = df[df['k'] == k]
-        medias = k_data['Latencia (ms)'].values
+        medias = k_data['Latency (ms)'].values
         offset = (i - 1) * ancho_barra
         bars = ax.bar(x + offset, medias, ancho_barra, label=f'k={k}')
 
@@ -247,17 +253,17 @@ def generar_grafica_comparativa(resultados_completos: Dict):
                    f'{height:.2f}', ha='center', va='bottom', fontsize=8)
 
     # Configuramos el gráfico
-    ax.set_xlabel('Configuración (Frecuencia - Longitud)', fontsize=12)
-    ax.set_ylabel('Latencia Media (ms)', fontsize=12)
-    ax.set_title('Comparación de Latencias: Impacto de k, Frecuencia y Longitud', fontsize=14, fontweight='bold')
+    ax.set_xlabel('Configuration (Frequency - Length)', fontsize=12)
+    ax.set_ylabel('Mean Latency (ms)', fontsize=12)
+    ax.set_title('Latency Comparison: Impact of k, Frequency, and Length', fontsize=14, fontweight='bold')
 
     # Etiquetamos el eje X
-    labels = [f"{f.split('_')[0].title()[:4]}\n{l.title()[:4]}"
+    labels = [f"{N_FREQ[f][:4]}\n{N_LONG[l][:4]}"
               for f in FRECUENCIAS for l in LONGITUDES]
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
 
-    ax.legend(title='Profundidad de Búsqueda', fontsize=10)
+    ax.legend(title='Search Depth (k)', fontsize=10)
     ax.grid(True, axis='y', alpha=0.3)
 
     plt.tight_layout()
@@ -280,13 +286,13 @@ def generar_mapa_calor(resultados_completos: Dict):
         # Creamos el heatmap
         fig, ax = plt.subplots(figsize=(10, 8))
         sns.heatmap(matriz, annot=True, fmt='.2f', cmap='YlOrRd',
-                   xticklabels=[l.title() for l in LONGITUDES],
-                   yticklabels=[f.replace('_frecuencia', '').title() for f in FRECUENCIAS],
-                   ax=ax, cbar_kws={'label': 'Latencia (ms)'})
+                   xticklabels=[N_LONG[l] for l in LONGITUDES],
+                   yticklabels=[N_FREQ[f] for f in FRECUENCIAS],
+                   ax=ax, cbar_kws={'label': 'Latency (ms)'})
 
-        ax.set_title(f'Mapa de Calor de Latencias - k={k}', fontsize=14, fontweight='bold')
-        ax.set_xlabel('Longitud de Query', fontsize=12)
-        ax.set_ylabel('Frecuencia Semántica', fontsize=12)
+        ax.set_title(f'Latency Heatmap - k={k}', fontsize=14, fontweight='bold')
+        ax.set_xlabel('Query Length', fontsize=12)
+        ax.set_ylabel('Semantic Frequency', fontsize=12)
 
         plt.tight_layout()
         filename = os.path.join(DIRECTORIO_SALIDA, f'heatmap_k{k}.png')
@@ -304,13 +310,13 @@ def guardar_resultados_csv(resultados_completos: Dict):
                 result = resultados_completos[k][frecuencia][longitud]
                 filas.append({
                     'k': k,
-                    'frecuencia': frecuencia,
-                    'longitud': longitud,
-                    'media_ms': result['media'],
-                    'mediana_ms': result['mediana'],
-                    'std_ms': result['std'],
-                    'outliers_filtrados': result['outliers'],
-                    'num_muestras': len(result['tiempos_limpios'])
+                    'Frequency': N_FREQ[frecuencia],
+                    'Length': N_LONG[longitud],
+                    'Mean_Latency (ms)': result['media'],
+                    'Median_Latency (ms)': result['mediana'],
+                    'Std_Latency (ms)': result['std'],
+                    'Filtered_Outliers': result['outliers'],
+                    'Sample_Size': len(result['tiempos_limpios'])
                 })
 
     df = pd.DataFrame(filas)
@@ -377,7 +383,7 @@ def main():
         print("[+] Limpieza completada")
 
         # Ejecutamos todas las queries para esta k
-        results = prueba_latencia(collection, model, queries, k, total_queries)
+        results = prueba_latencia(collection, model, queries, k, NUM_ITERACIONES)
         resultados_completos[k] = results
 
 

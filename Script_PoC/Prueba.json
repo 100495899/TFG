@@ -1,0 +1,71 @@
+{
+  "alta_frecuencia": {
+    "corta": [
+      "Time flies every day",
+      "Man needs more time",
+      "Day after day passes",
+      "The day seemed shorter"
+    ],
+    "media": [
+      "Every man needs time to reflect on the days that have passed by quickly",
+      "The day started early when the man realized time was running out for completion",
+      "Time flies so fast that every man loses track of days passing by unnoticed",
+      "A wise man once said that time and day are the most precious gifts given",
+      "Every time the man chose faith over fear his days became filled with hope"
+    ],
+    "larga": [
+      "The wise old man sat quietly reflecting on how many days had passed since he first understood that time was the most precious commodity any man could possess in his entire lifetime of experiences",
+      "Day after day the young man worked tirelessly in the fields wondering if there would ever come a time when he could rest and enjoy the fruits of his labor without worrying about tomorrow's sunrise",
+      "Every man who has lived long enough knows that time has a peculiar way of speeding up with each passing day making the years feel like months and the months feel like mere weeks",
+      "The successful man realized too late that all the time he spent chasing money and power had cost him precious days with his family who needed his presence more than his provisions ever could",
+      "The time had come for the man to stop deferring his dreams to retirement and start living them today because tomorrow was promised to no man and the only time that truly existed was the present moment"
+    ]
+  },
+  "media_frecuencia": {
+    "corta": [
+      "People face the world",
+      "Friend by my side",
+      "God knows every word",
+      "Night falls on people",
+      "Head full of love"
+    ],
+    "media": [
+      "People around the world gather at night to hear god's word spoken clearly",
+      "My friend stood by my side when I needed to face the difficult world",
+      "The night brings peace to people who trust in god's word and divine plan",
+      "Every part of the world has people searching for god's face in the darkness",
+      "A true friend stays by your side through the darkest night without any hesitation",
+      "Part of friendship means helping people see god's face in the darkness of night"
+    ],
+    "larga": [
+      "In this vast and complex world people search for meaning through god's word while friends stand by their side offering support and comfort during the darkest hours of the night when doubts and fears threaten to overwhelm",
+      "Every night when the world grows quiet and people rest their weary heads true friends gather together to study god's word and discuss how his divine plan affects every part of their lives and the lives of those they love",
+      "The face of god shines upon the world bringing hope to people who have lost their way and desperately need a friend to guide them through the night towards the light of his eternal word and everlasting love",
+      "My best friend stood by my side through the longest night of my life when the weight of the world pressed down on my head and only god's word brought comfort to my troubled heart and anxious mind",
+      "The night brings divine appointments as god's word connects people who need each other while friends discover that their paths crossed at exactly the right moment to fulfill heaven's purposes in the world"
+    ]
+  },
+  "baja_frecuencia": {
+    "corta": [
+      "Bitcoin mining requires electricity",
+      "Ethereum blockchain validates transactions",
+      "Tesla produces electric vehicles",
+      "Instagram influencer posts daily",
+      "Asgard destroyed by Ragnarok"
+    ],
+    "media": [
+      "Bitcoin cryptocurrency reached an all-time high before crashing dramatically due to regulatory concerns",
+      "Elon Musk's Tesla company announced new electric vehicles with advanced autopilot features yesterday",
+      "Instagram influencers are losing followers because the algorithm changed how content gets distributed",
+      "TikTok creators discovered a new viral trend involving elaborate dance moves and special effects",
+      "Netflix subscription prices increased again while their content library continues shrinking in many regions",
+      "The PlayStation 5 console remains difficult to find in stores due to ongoing chip shortages"
+
+    ],
+    "larga": [
+      "Bitcoin cryptocurrency mining operations consume more electricity than entire countries while blockchain technology promises to revolutionize financial systems through decentralized ledgers that eliminate traditional banking intermediaries and enable peer-to-peer transactions globally",
+      "Tesla's autopilot system uses multiple cameras and neural networks to navigate highways but still requires driver attention despite Elon Musk's promises of full self-driving capability coming soon for years without delivering",
+      "Instagram influencers carefully curate their feeds with filtered photos and sponsored content while struggling with mental health issues from constant comparison and the pressure to maintain perfect online personas for millions of followers"
+    ]
+  }
+}
