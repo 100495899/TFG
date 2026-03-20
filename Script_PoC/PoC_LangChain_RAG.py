@@ -11,93 +11,30 @@ import pandas as pd
 from typing import Dict, List, Tuple
 import os
 import random
+import torch
 
+
+# LangChain y Transformers (HuggingFace)
+from langchain_chroma import Chroma
+from langchain_huggingface import HuggingFaceEmbeddings, HuggingFacePipeline
+from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+from langchain_classic.chains import create_retrieval_chain
+from langchain_classic.chains.combine_documents import create_stuff_documents_chain
+from langchain_core.prompts import PromptTemplate
 
 # Configuración del experimento
-K_VALUES = [5, 50, 100, 200]
+K_VALUES = [5, 20, 50, 100]
 FRECUENCIAS = ['alta_frecuencia', 'media_frecuencia', 'baja_frecuencia']
 LONGITUDES = ['corta', 'media', 'larga']
 DATABASE_PATH = "./workspace/pg19"
 COLLECTION_NAME = "gutenberg_completo"
 QUERIES_FILE = "Querys.json"
 DIRECTORIO_SALIDA = "./resultados"
-NUM_ITERACIONES = 30
+NUM_ITERACIONES = 2
 N_FREQ = {'alta_frecuencia': 'High', 'media_frecuencia': 'Medium', 'baja_frecuencia': 'Low'}
 N_LONG = {'corta': 'Short', 'media': 'Medium', 'larga': 'Long'}
 
-
-def prueba_latencia(collection, model, queries: Dict, k: int, num_iteraciones: int) -> Dict:
-    """
-    Ejecuta todas las queries mezcladas aleatoriamente durante N iteraciones
-    para evitar el sesgo de caché de ChromaDB.
-    """
-    print(f"\n[*] Preparando y vectorizando TODAS las queries para k={k}...")
-    todas_las_queries = []
-
-    # 1. Vectorizamos todo antes de medir para aislar el tiempo de la base de datos
-    for frecuencia in FRECUENCIAS:
-        for longitud in LONGITUDES:
-            lista_textos = queries[frecuencia][longitud]
-            vectores = model.encode(lista_textos).tolist()
-            
-            # Guardamos el vector junto con su "etiqueta" para saber a qué categoría pertenece
-            for vector in vectores:
-                todas_las_queries.append((vector, frecuencia, longitud))
-
-    total_queries_por_iteracion = len(todas_las_queries)
-    
-    # Aquí guardaremos TODOS los tiempos de las 30 iteraciones juntos
-    tiempos_brutos = {f: {l: [] for l in LONGITUDES} for f in FRECUENCIAS}
-
-    gc.disable()
-    try:
-        for iteracion in range(num_iteraciones):
-            print(f"    -> Iteración {iteracion + 1}/{num_iteraciones}...")
-            
-            # 2. Mezclamos el orden aleatoriamente en cada iteración
-            random.shuffle(todas_las_queries)
-            
-            # 3. Ejecutamos las queries en el nuevo orden
-            for i, (vector, freq, long) in enumerate(todas_las_queries):
-                inicio = time.perf_counter()
-                _ = collection.query(query_embeddings=vector, n_results=k)
-                fin = time.perf_counter()
-                
-                latencia = (fin - inicio) * 1000
-                tiempos_brutos[freq][long].append(latencia)
-                
-                # Mostramos progreso cada 50 queries para no saturar la consola
-                if (i + 1) % 50 == 0:
-                    print(f"        Progreso iteración {iteracion+1}: {i+1}/{total_queries_por_iteracion} queries")
-        # 4. Limpiamos y estructuramos los resultados para que las gráficas funcionen igual
-        print("    -> Procesando y filtrando resultados estadísticos...")
-        results = {}
-        for freq in FRECUENCIAS:
-            results[freq] = {}
-            for long in LONGITUDES:
-                tiempos = tiempos_brutos[freq][long]
-                
-                # Filtramos outliers (el 1% más lento)
-                limite = np.percentile(tiempos, 99)
-                tiempos_limpios = [t for t in tiempos if t <= limite]
-                
-                results[freq][long] = {
-                    'tiempos_sucios': tiempos,
-                    'tiempos_limpios': tiempos_limpios,
-                    'media': np.mean(tiempos_limpios),
-                    'mediana': np.median(tiempos_limpios),
-                    'std': np.std(tiempos_limpios),
-                    'outliers': len(tiempos) - len(tiempos_limpios)
-                }
-
-    except Exception as e:
-        print(f"Error durante la prueba: {e}")
-    finally:
-        gc.enable()
-        gc.collect()
-
-    return results
-
+# GRÁFICAS
 def generar_graficas_densidad(resultados_completos: Dict):
     """Generamos gráficas de densidad KDE para cada valor de k"""
 
@@ -300,6 +237,8 @@ def generar_mapa_calor(resultados_completos: Dict):
         print(f"[+] Heatmap guardado: {filename}")
         plt.close()
 
+
+# GUARDAR RESULTADOS
 def guardar_resultados_csv(resultados_completos: Dict):
     """Guardamos los resultados en un archivo CSV"""
 
@@ -328,66 +267,165 @@ def guardar_resultados_csv(resultados_completos: Dict):
     print("\n======== RESUMEN DE RESULTADOS ========")
     print(df.to_string(index=False))
 
-def main():
-    """Función principal del benchmark multidimensional"""
-    print("=" * 30)
-    print("PRUEBA HNSW CHROMADB")
-    print("=" * 30)
 
-    # 1. Cargamos las queries desde JSON
-    print(f"[*] Cargando queries desde {QUERIES_FILE}")
+# FUNCIONES PRINCIPALES
+def configurar_llm():
+    """Descargamos y cargamos el modelo de IA en la VRAM de la gráfica"""
+    print("\n[*] Cargando el LLM (Qwen-2.5-7B) en la tarjeta gráfica")
+    model_id = "Qwen/Qwen2.5-7B-Instruct"
+    
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    # Cargamos en bfloat16 para ahorra VRAM
+    model = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype="auto", device_map="auto")
+    
+    pipe = pipeline(
+        "text-generation", 
+        model=model, 
+        tokenizer=tokenizer, 
+        max_new_tokens=60,
+        max_length=None,
+        temperature=0.1,
+        return_full_text=False,
+        truncation=True
+    )
+    
+    # Lo convertimos al formato que entiende LangChain
+    llm = HuggingFacePipeline(pipeline=pipe)
+    print("[+] LLM cargado y listo.")
+    return llm
+
+def prueba_latencia_rag(rag_chain, queries: Dict, k: int, num_iteraciones: int):
+    """Ejecutamos las queries contra toda la cadena RAG"""
+    print(f"\n[*] Preparando las queries para k={k}")
+    todas_las_queries = []
+
+    for frecuencia in FRECUENCIAS:
+        for longitud in LONGITUDES:
+            lista_textos = queries[frecuencia][longitud]
+            for texto in lista_textos:
+                todas_las_queries.append((texto, frecuencia, longitud))
+
+    tiempos_brutos = {f: {l: [] for l in LONGITUDES} for f in FRECUENCIAS}
+
+    gc.disable()
+    try:
+        for iteracion in range(num_iteraciones):
+            print(f"    -> Iteración {iteracion + 1}/{num_iteraciones}")
+            random.shuffle(todas_las_queries)
+            
+            for i, (texto_query, freq, long) in enumerate(todas_las_queries):
+
+                inicio = time.perf_counter()
+                
+                # Le pasamos la query en texto plano a LangChain
+                respuesta = rag_chain.invoke({"input": texto_query})
+                
+                fin = time.perf_counter()
+                
+                latencia = (fin - inicio) * 1000
+                tiempos_brutos[freq][long].append(latencia)
+                
+                # print(f"\n[Ejemplo {freq}-{long}] Query: {texto_query}")
+                # print(f"Respuesta de la IA: {respuesta['answer']}\n")
+                
+                if (i + 1) % 50 == 0:
+                    print(f"        Progreso: {i+1}/{len(todas_las_queries)} queries")
+
+
+        print("    -> Procesando y filtrando resultados estadísticos...")
+        results = {}
+        for freq in FRECUENCIAS:
+            results[freq] = {}
+            for long in LONGITUDES:
+                tiempos = tiempos_brutos[freq][long]
+                
+                # Filtramos outliers (el 1% más lento)
+                limite = np.percentile(tiempos, 99)
+                tiempos_limpios = [t for t in tiempos if t <= limite]
+                
+                results[freq][long] = {
+                    'tiempos_sucios': tiempos,
+                    'tiempos_limpios': tiempos_limpios,
+                    'media': np.mean(tiempos_limpios),
+                    'mediana': np.median(tiempos_limpios),
+                    'std': np.std(tiempos_limpios),
+                    'outliers': len(tiempos) - len(tiempos_limpios)
+                }
+        
+
+    except Exception as e:
+        print(f"\nError durante la prueba RAG: {e}")
+        return None
+    finally:
+        gc.enable()
+        gc.collect()
+        
+    return results
+
+def main():
+    print("=" * 40)
+    print("INICIANDO ENTORNO RAG")
+    print("=" * 40)
+
+    # 1. Cargamos las Queries
     with open(QUERIES_FILE, 'r', encoding='utf-8') as f:
         queries = json.load(f)
 
-    # Verificamos la estructura
-    total_queries = 0
-    for freq in FRECUENCIAS:
-        for long in LONGITUDES:
-            count = len(queries[freq][long])
-            print(f"    -> {freq} - {long}: {count} queries")
-            total_queries += count
+    # 2. Cargamos el LLM Local
+    llm = configurar_llm()
 
-    print(f"[+] Total de queries cargadas: {total_queries}")
-
-    # 2. Conectamos a ChromaDB
-    print(f"\n[*] Conectando a la base de datos en {DATABASE_PATH}")
-    client = chromadb.PersistentClient(path=DATABASE_PATH)
-    collection = client.get_collection(name=COLLECTION_NAME)
-    print(f"[+] Coleccion cargada. Total de vectores: {collection.count()}")
-
-    # 3. Cargamos el modelo de embeddings
-    print("\n[*] Cargando modelo de embeddings (all-MiniLM-L6-v2)")
-    model = SentenceTransformer('all-MiniLM-L6-v2')
-    print("[+] Modelo cargado")
-
-    # 4. Calentamiento inicial
-    print("[*] Calentando el motor HNSW")
-    query_calentamiento = "query de calentamiento para inicializar"
-    vector = model.encode([query_calentamiento]).tolist()
-    _ = collection.query(query_embeddings=vector, n_results=1)
-    print("[+] Motor calentado")
-
-    # 5. Ejecutamos las pruebas para cada valor de k
+    # 3. Conectamos ChromaDB a través de LangChain
+    print("\n[*] Conectando a ChromaDB")
+    
+    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    
+    # Creamos el wrapper de LangChain
+    vectorstore = Chroma(
+        collection_name=COLLECTION_NAME,
+        persist_directory=DATABASE_PATH,
+        embedding_function=embeddings
+    )
+    
     resultados_completos = {}
-
+    
     for k in K_VALUES:
-        print(f"\n{'='*30}")
-        print(f"INICIANDO PRUEBAS PARA k={k}")
-        print(f"{'='*30}")
+        print(f"\n[*] Configurando el Retriever para k={k}")
+        retriever = vectorstore.as_retriever(search_kwargs={"k": k})
 
-        # Limpiamos la caché antes de cada serie de k
+        # 4. Creamos el Prompt
+        template = """Analiza la relación entre los términos principales de la ENTRADA y el CONTEXTO.
+        Debes responder SIEMPRE, de forma obligatoria, siguiendo EXACTAMENTE esta estructura de dos líneas, sin añadir nada más:
+        
+        RELACIÓN: [Escribe 'ALTA', 'BAJA']
+        JUSTIFICACIÓN: [Escribe exactamente una oración de entre 10 y 15 palabras explicando el porqué, incluso si la relación es baja].
+
+        Contexto:
+        {context}
+
+        Entrada: {input}
+        
+        Respuesta estricta:
+        RELACIÓN:"""
+        prompt = PromptTemplate.from_template(template)
+
+        # 5. Ensamblamos la Cadena RAG Completa
+        document_chain = create_stuff_documents_chain(llm, prompt)
+        rag_chain = create_retrieval_chain(retriever, document_chain)
+
+        print("[*] Calentando el motor RAG completo")
+        _ = rag_chain.invoke({"input": "query de calentamiento para cargar en VRAM"})
+        print("[+] Motor calentado")
+
         print("[*] Limpiando cache y memoria")
         gc.collect()
-        # Pausamos para permitir que el OS libere memoria
-        time.sleep(2)  
-        print("[+] Limpieza completada")
+        torch.cuda.empty_cache()
+        time.sleep(2)
 
-        # Ejecutamos todas las queries para esta k
-        results = prueba_latencia(collection, model, queries, k, NUM_ITERACIONES)
+        # 6. Probamos la latencia de la cadena RAG con las queries
+        results = prueba_latencia_rag(rag_chain, queries, k, NUM_ITERACIONES)
         resultados_completos[k] = results
-
-
-    # 6. Generamos visualizaciones
+    
+    # 7. Generamos visualizaciones
     print(f"\n{'='*30}")
     print("GENERANDO VISUALIZACIONES")
     print(f"{'='*30}")
@@ -398,37 +436,11 @@ def main():
     generar_grafica_comparativa(resultados_completos)
     generar_mapa_calor(resultados_completos)
 
-    # 7. Guardamos los resultados
+    # 8. Guardamos los resultados
     guardar_resultados_csv(resultados_completos)
 
-    # 8. Análisis estadístico final
     print(f"\n{'='*30}")
-    print("ANALISIS ESTADISTICO FINAL")
-    print(f"{'='*30}")
-
-    # Calculamos las diferencias significativas
-    for k in K_VALUES:
-        print(f"\n[k={k}] Diferencias entre configuraciones extremas:")
-
-        # Alta frecuencia corta vs Baja frecuencia larga
-        alta_corta = resultados_completos[k]['alta_frecuencia']['corta']['media']
-        baja_larga = resultados_completos[k]['baja_frecuencia']['larga']['media']
-        diff = abs(alta_corta - baja_larga)
-
-        print(f"  Alta-Corta: {alta_corta:.3f}ms")
-        print(f"  Baja-Larga: {baja_larga:.3f}ms")
-        print(f"  Diferencia: {diff:.3f}ms ({(diff/min(alta_corta, baja_larga))*100:.1f}%)")
-
-        # Test estadístico t-test
-        t_stat, p_value = stats.ttest_ind(
-            resultados_completos[k]['alta_frecuencia']['corta']['tiempos_limpios'],
-            resultados_completos[k]['baja_frecuencia']['larga']['tiempos_limpios']
-        )
-        print(f"  T-statistic: {t_stat:.4f}")
-        print(f"  P-value: {p_value:.10f}")
-
-    print(f"\n{'='*30}")
-    print("PRUEBA HNSW CHROMADB COMPLETADA")
+    print("PRUEBA RAG COMPLETADA")
     print(f"{'='*30}")
 
 if __name__ == "__main__":
