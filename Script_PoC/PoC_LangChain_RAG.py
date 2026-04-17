@@ -271,8 +271,8 @@ def guardar_resultados_csv(resultados_completos: Dict):
 # FUNCIONES PRINCIPALES
 def configurar_llm():
     """Descargamos y cargamos el modelo de IA en la VRAM de la gráfica"""
-    print("\n[*] Cargando el LLM (Qwen-2.5-7B) en la tarjeta gráfica")
-    model_id = "Qwen/Qwen2.5-7B-Instruct"
+    print("\n[*] Cargando el LLM (HuggingFaceTB/SmolLM2-135M-Instruct) en la tarjeta gráfica")
+    model_id = "HuggingFaceTB/SmolLM2-135M-Instruct"
     
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     # Cargamos en bfloat16 para ahorra VRAM
@@ -282,11 +282,14 @@ def configurar_llm():
         "text-generation", 
         model=model, 
         tokenizer=tokenizer, 
-        max_new_tokens=60,
+        max_new_tokens=100,
+        min_new_tokens=1,
+        min_length=None,
         max_length=None,
         temperature=0.1,
         return_full_text=False,
-        truncation=True
+        truncation=True,
+        pad_token_id=tokenizer.eos_token_id
     )
     
     # Lo convertimos al formato que entiende LangChain
@@ -326,7 +329,7 @@ def prueba_latencia_rag(rag_chain, queries: Dict, k: int, num_iteraciones: int):
                 tiempos_brutos[freq][long].append(latencia)
                 
                 # print(f"\n[Ejemplo {freq}-{long}] Query: {texto_query}")
-                # print(f"Respuesta de la IA: {respuesta['answer']}\n")
+                print(f"Respuesta de la IA: {respuesta['answer']}\n")
                 
                 if (i + 1) % 50 == 0:
                     print(f"        Progreso: {i+1}/{len(todas_las_queries)} queries")
@@ -393,19 +396,15 @@ def main():
         retriever = vectorstore.as_retriever(search_kwargs={"k": k})
 
         # 4. Creamos el Prompt
-        template = """Analiza la relación entre los términos principales de la ENTRADA y el CONTEXTO.
-        Debes responder SIEMPRE, de forma obligatoria, siguiendo EXACTAMENTE esta estructura de dos líneas, sin añadir nada más:
-        
-        RELACIÓN: [Escribe 'ALTA', 'BAJA']
-        JUSTIFICACIÓN: [Escribe exactamente una oración de entre 10 y 15 palabras explicando el porqué, incluso si la relación es baja].
-
-        Contexto:
-        {context}
-
-        Entrada: {input}
-        
-        Respuesta estricta:
-        RELACIÓN:"""
+        template = """Eres un asistente analítico. Usa el siguiente contexto para responder a la pregunta.
+                    Regla estricta: Si la pregunta trata sobre un término de baja frecuencia, o si la información del contexto es escasa o poco relevante, tu respuesta debe ser ÚNICA y EXCLUSIVAMENTE la palabra "Baja". No añadas puntos, ni saludos, ni explicaciones adicionales.
+                    Si hay abundante información, genera una respuesta detallada y extensa.
+                    
+                    Contexto:
+                    {context}
+                    
+                    Pregunta: {input}
+                    Respuesta:"""
         prompt = PromptTemplate.from_template(template)
 
         # 5. Ensamblamos la Cadena RAG Completa
