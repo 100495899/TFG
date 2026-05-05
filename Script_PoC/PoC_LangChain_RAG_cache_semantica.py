@@ -55,8 +55,6 @@ CACHE_CONFIGS = {
     'cache_exacta': {'tipo': 'memory', 'umbral': None}
 }
 
-# Flag para pre-validación
-PRE_VALIDAR_CACHES = True
 
 class CacheMonitor:
     """Monitor para trackear estadísticas de cache hits/misses"""
@@ -200,10 +198,6 @@ def configurar_cache(config_name: str, embeddings) -> Optional[CacheMonitor]:
         except ValueError as e:
             if "RediSearch" in str(e):
                 print(f"[!] ERROR: Redis Stack con RediSearch no está instalado")
-                print(f"[!] Para instalar Redis Stack en RunPod, ejecuta:")
-                print(f"[!]   bash ./Script_PoC/setup_redis_stack_runpod.sh")
-                print(f"[!] O usa Docker:")
-                print(f"[!]   docker run -d -p 6379:6379 redis/redis-stack-server:latest")
                 return None
             else:
                 print(f"[!] Error de configuración: {e}")
@@ -215,11 +209,28 @@ def configurar_cache(config_name: str, embeddings) -> Optional[CacheMonitor]:
 
     return monitor
 
-def detectar_cache_hit(latencia_ms: float, percentil_threshold: float = 10.0) -> bool:
+def detectar_cache_hit(latencia_ms: float, cache_type: str = 'none', percentil_threshold: float = 100.0) -> bool:
     """
-    Heurística para detectar cache hits basada en latencia.
-    Un hit típicamente tiene latencia < 10ms
+    Detecta cache hits por threshold fijo, adaptado al tipo de caché.
+    
+    Lógica:
+    - sin_cache (none): siempre miss (no hay caché)
+    - cache_exacta (memory): threshold bajo (~15ms, acceso RAM)
+    - caché semántica Redis (redis): threshold medio (~50ms, búsqueda + distancia)
+    - caché semántica LangChain (cache_sem_*): threshold alto (~100-120ms, embedding + comparación)
+    
+    En RunPod con caché semántica, las latencias típicas de hit son 80-180ms,
+    no 10ms, así que usamos threshold acorde al tipo.
     """
+    if cache_type == 'none':
+        return False
+    
+    if cache_type == 'memory':
+        return latencia_ms < 100.0
+    
+    if cache_type == 'redis':
+        return latencia_ms < 100.0
+    
     return latencia_ms < percentil_threshold
 
 # GRÁFICAS CON INFORMACIÓN DE CACHÉ
@@ -524,6 +535,7 @@ def prueba_latencia_rag_con_cache(rag_chain, queries: Dict, k: int, num_iteracio
                                   config_name: str, embeddings, monitor: CacheMonitor):
     """Ejecuta las queries con monitoreo de caché"""
     print(f"\n[*] Ejecutando pruebas con configuración: {config_name}, k={k}")
+    cache_type = CACHE_CONFIGS.get(config_name, {}).get('tipo', 'none')
 
     todas_las_queries = []
     for frecuencia in FRECUENCIAS:
@@ -549,8 +561,12 @@ def prueba_latencia_rag_con_cache(rag_chain, queries: Dict, k: int, num_iteracio
 
                 latencia = (fin - inicio) * 1000
 
-                # Detectar cache hit por heurística fija
-                es_cache_hit = detectar_cache_hit(latencia, percentil_threshold=15.0)
+                # Detectar cache hit con threshold adaptado al tipo de caché
+                es_cache_hit = detectar_cache_hit(
+                    latencia,
+                    cache_type=cache_type,
+                    percentil_threshold=100.0
+                )
 
                 # Registrar en monitor
                 monitor.registrar_consulta(latencia, es_cache_hit, freq, long)
@@ -708,16 +724,10 @@ def main():
             redisearch_disponible = True
         else:
             print("[!] RediSearch NO disponible")
-            print("[!] Para habilitar caché semántica:")
-            print("[!]   1. En RunPod: bash ./Script_PoC/setup_redis_stack_runpod.sh")
-            print("[!]   2. Con Docker: docker run -d -p 6379:6379 redis/redis-stack-server:latest")
-            print("[!]   3. O instala Redis Stack manualmente")
 
     except redis.ConnectionError:
         print("[!] Redis no está disponible")
-        print("[!] Para instalar Redis:")
-        print("[!]   - Ubuntu/Debian: sudo apt-get install redis-server")
-        print("[!]   - RunPod: bash ./Script_PoC/setup_redis_stack_runpod.sh")
+
 
     # Ajustar configuraciones según disponibilidad
     if not redis_disponible:
