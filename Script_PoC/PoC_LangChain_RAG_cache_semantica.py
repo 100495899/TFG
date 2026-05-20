@@ -16,7 +16,7 @@ import redis
 from datetime import datetime
 import hashlib
 
-# LangChain y Transformers (HuggingFace)
+# Importamos las librerías necesarias de LangChain para RAG y HuggingFace para el modelo
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings, HuggingFacePipeline
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
@@ -27,7 +27,7 @@ from langchain_core.globals import set_llm_cache
 from langchain_community.cache import RedisSemanticCache
 from langchain_community.cache import InMemoryCache
 
-# Configuración del experimento
+# Parámetros principales del experimento para evaluar el comportamiento del sistema
 K_VALUES = [5, 20, 50, 100]
 FRECUENCIAS = ['alta_frecuencia', 'media_frecuencia', 'baja_frecuencia']
 LONGITUDES = ['corta', 'media', 'larga']
@@ -39,11 +39,11 @@ NUM_ITERACIONES = 2
 N_FREQ = {'alta_frecuencia': 'High', 'media_frecuencia': 'Medium', 'baja_frecuencia': 'Low'}
 N_LONG = {'corta': 'Short', 'media': 'Medium', 'larga': 'Long'}
 
-# Configuración de Redis
+# Conexión con el servidor Redis local para la caché semántica
 REDIS_URL = "redis://localhost:6379"
 
-# IMPORTANTE: Orden cambiado para detectar problemas de Redis primero
-# Las configuraciones de Redis se prueban ANTES que las demás
+# Configuramos primero las variantes con Redis para detectar errores de conexión temprano
+# Esto evita perder tiempo si Redis no está disponible
 CACHE_CONFIGS = {
     # Primero probar Redis para fallar rápido si hay problemas
     'cache_sem_095': {'tipo': 'redis', 'umbral': 0.95},
@@ -57,13 +57,14 @@ CACHE_CONFIGS = {
 
 
 class CacheMonitor:
-    """Monitor para trackear estadísticas de cache hits/misses"""
+    """Clase que monitoriza y registra las estadísticas del sistema de caché
+    Permite analizar el rendimiento distinguiendo entre hits y misses"""
 
     def __init__(self):
         self.reset()
 
     def reset(self):
-        """Reinicia todas las estadísticas"""
+        """Limpia los contadores para comenzar una nueva medición"""
         self.stats = {
             'total_queries': 0,
             'cache_hits': 0,
@@ -77,7 +78,7 @@ class CacheMonitor:
         }
 
     def registrar_consulta(self, latencia: float, es_hit: bool, frecuencia: str, longitud: str):
-        """Registra una consulta con sus métricas"""
+        """Guarda los datos de cada consulta realizada para análisis posterior"""
         self.stats['total_queries'] += 1
 
         if es_hit:
@@ -92,7 +93,7 @@ class CacheMonitor:
             self.stats['misses_por_longitud'][longitud] += 1
 
     def obtener_resumen(self) -> Dict:
-        """Obtiene un resumen de las estadísticas"""
+        """Calcula y devuelve las métricas agregadas del experimento"""
         if self.stats['total_queries'] == 0:
             return {'error': 'No hay consultas registradas'}
 
@@ -112,7 +113,7 @@ class CacheMonitor:
             'hit_rates_por_longitud': {}
         }
 
-        # Calcular hit rates por categoría
+        # Calculamos el porcentaje de aciertos agrupado por frecuencia y longitud
         for freq in FRECUENCIAS:
             total = self.stats['hits_por_frecuencia'][freq] + self.stats['misses_por_frecuencia'][freq]
             if total > 0:
@@ -126,22 +127,23 @@ class CacheMonitor:
         return resumen
 
 def verificar_redis_stack() -> bool:
-    """Verifica que Redis Stack con RediSearch esté disponible"""
+    """Comprueba que tengamos Redis Stack instalado con el módulo RediSearch
+    necesario para implementar búsquedas semánticas eficientes"""
     try:
         redis_client = redis.from_url(REDIS_URL)
         redis_client.ping()
 
-        # Verificar módulos cargados
+        # Comprobamos qué módulos tiene cargados Redis
         try:
             modules = redis_client.execute_command('MODULE', 'LIST')
-            # Buscar RediSearch en los módulos
+            # Buscamos específicamente el módulo de búsqueda
             for module in modules:
                 if len(module) > 1 and 'search' in str(module[1]).lower():
-                    # Verificar versión de RediSearch
+                    # Intentamos usar comandos de RediSearch para confirmar que funciona
                     try:
                         info = redis_client.execute_command('FT.INFO', 'test_idx')
                     except:
-                        # Si no existe el índice, intentar crear uno de prueba
+                        # Creamos un índice temporal para verificar que RediSearch funciona correctamente
                         try:
                             redis_client.execute_command('FT.CREATE', 'test_idx',
                                                        'SCHEMA', 'field', 'TEXT')
@@ -164,7 +166,8 @@ def verificar_redis_stack() -> bool:
         return False
 
 def configurar_cache(config_name: str, embeddings) -> Optional[CacheMonitor]:
-    """Configura el tipo de caché según la configuración"""
+    """Establece el sistema de caché apropiado según el experimento actual
+    Puede ser sin caché, caché exacta en memoria o caché semántica con Redis"""
     config = CACHE_CONFIGS[config_name]
     monitor = CacheMonitor()
 
@@ -176,14 +179,14 @@ def configurar_cache(config_name: str, embeddings) -> Optional[CacheMonitor]:
         print(f"[*] Caché en memoria activada")
     elif config['tipo'] == 'redis':
         try:
-            # Verificar conexión Redis
+            # Primero comprobamos que podemos conectarnos a Redis
             redis_client = redis.from_url(REDIS_URL)
             redis_client.ping()
 
-            # Limpiar caché anterior
+            # Vaciamos la base de datos para empezar con caché limpia
             redis_client.flushdb()
 
-            # Configurar caché semántica
+            # Creamos la caché semántica con el umbral de similitud especificado
             cache = RedisSemanticCache(
                 redis_url=REDIS_URL,
                 embedding=embeddings,
@@ -211,16 +214,15 @@ def configurar_cache(config_name: str, embeddings) -> Optional[CacheMonitor]:
 
 def detectar_cache_hit(latencia_ms: float, cache_type: str = 'none', percentil_threshold: float = 100.0) -> bool:
     """
-    Detecta cache hits por threshold fijo, adaptado al tipo de caché.
-    
-    Lógica:
-    - sin_cache (none): siempre miss (no hay caché)
-    - cache_exacta (memory): threshold bajo (~15ms, acceso RAM)
-    - caché semántica Redis (redis): threshold medio (~50ms, búsqueda + distancia)
-    - caché semántica LangChain (cache_sem_*): threshold alto (~100-120ms, embedding + comparación)
-    
-    En RunPod con caché semántica, las latencias típicas de hit son 80-180ms,
-    no 10ms, así que usamos threshold acorde al tipo.
+    Determina si una consulta fue un hit de caché basándose en su latencia.
+
+    Cada tipo de caché tiene diferentes latencias esperadas:
+    - Sin caché: siempre es miss por definición
+    - Caché en memoria: muy rápida, menos de 100ms indica hit
+    - Caché Redis: búsqueda semántica más costosa, threshold de 100ms
+
+    Los umbrales están calibrados para el entorno de ejecución específico
+    donde los hits de caché semántica rondan los 80-180ms.
     """
     if cache_type == 'none':
         return False
@@ -233,14 +235,15 @@ def detectar_cache_hit(latencia_ms: float, cache_type: str = 'none', percentil_t
     
     return latencia_ms < percentil_threshold
 
-# GRÁFICAS CON INFORMACIÓN DE CACHÉ
+# Funciones para visualizar el impacto del sistema de caché en el rendimiento
 def generar_graficas_cache(resultados_cache: Dict):
-    """Genera gráficas específicas para análisis de caché"""
+    """Crea visualizaciones detalladas del comportamiento del sistema de caché
+    Incluye comparativas de hit rates y análisis de latencias"""
 
-    # 1. Comparación de Hit Rates por configuración
+    # Primera gráfica: comparamos el porcentaje de aciertos entre configuraciones
     fig, axes = plt.subplots(2, 2, figsize=(15, 12))
 
-    # Hit rate global
+    # Mostramos el rendimiento general de cada configuración de caché
     ax = axes[0, 0]
     configs = list(resultados_cache.keys())
     hit_rates = [resultados_cache[c]['resumen']['hit_rate'] for c in configs]
@@ -250,13 +253,13 @@ def generar_graficas_cache(resultados_cache: Dict):
     ax.set_ylim([0, 1])
     ax.grid(True, axis='y', alpha=0.3)
 
-    # Añadir valores sobre las barras
+    # Agregamos los porcentajes exactos encima de cada barra para mayor claridad
     for bar, rate in zip(bars, hit_rates):
         height = bar.get_height()
         ax.text(bar.get_x() + bar.get_width()/2., height,
                 f'{rate:.1%}', ha='center', va='bottom')
 
-    # Hit rate por frecuencia
+    # Segunda gráfica: desglose por frecuencia semántica de las consultas
     ax = axes[0, 1]
     x = np.arange(len(FRECUENCIAS))
     width = 0.15
@@ -275,7 +278,7 @@ def generar_graficas_cache(resultados_cache: Dict):
     ax.legend(fontsize=8)
     ax.grid(True, axis='y', alpha=0.3)
 
-    # Comparación de latencias hits vs misses
+    # Tercera gráfica: comparamos tiempos de respuesta entre aciertos y fallos
     ax = axes[1, 0]
     data_comparacion = []
     labels_comparacion = []
@@ -307,7 +310,7 @@ def generar_graficas_cache(resultados_cache: Dict):
         ax.legend()
         ax.grid(True, axis='y', alpha=0.3)
 
-    # Distribución de latencias con/sin caché
+    # Cuarta gráfica: histogramas de densidad para ver la distribución completa
     ax = axes[1, 1]
     for i, config in enumerate(configs):
         if config != 'sin_cache' and 'latencias' in resultados_cache[config]:
@@ -328,7 +331,8 @@ def generar_graficas_cache(resultados_cache: Dict):
     plt.close()
 
 def generar_reporte_cache(resultados_cache: Dict, k: int):
-    """Genera un reporte detallado de las métricas de caché"""
+    """Crea un informe textual completo con todas las estadísticas del experimento
+    Incluye métricas generales, desglose por categorías e impacto en el canal lateral"""
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = os.path.join(DIRECTORIO_SALIDA, f'reporte_cache_k{k}_{timestamp}.txt')
@@ -347,37 +351,37 @@ def generar_reporte_cache(resultados_cache: Dict, k: int):
 
             resumen = data['resumen']
 
-            # Métricas generales
-            f.write(f"\n📊 MÉTRICAS GENERALES:\n")
+            # Escribimos las estadísticas principales del experimento
+            f.write(f"\nMÉTRICAS GENERALES:\n")
             f.write(f"  Total consultas: {resumen['total_queries']}\n")
             f.write(f"  Cache hits: {resumen['cache_hits']}\n")
             f.write(f"  Cache misses: {resumen['cache_misses']}\n")
             f.write(f"  Hit rate global: {resumen['hit_rate']:.2%}\n")
             f.write(f"  Miss rate global: {resumen['miss_rate']:.2%}\n")
 
-            # Latencias
-            f.write(f"\n⏱️ LATENCIAS:\n")
+            # Analizamos los tiempos de respuesta
+            f.write(f"\nLATENCIAS:\n")
             f.write(f"  Media hits: {resumen['latencia_media_hits']:.2f} ms\n")
             f.write(f"  Media misses: {resumen['latencia_media_misses']:.2f} ms\n")
             f.write(f"  Reducción: {(1 - resumen['latencia_media_hits']/resumen['latencia_media_misses'])*100:.1f}%\n")
 
-            # Por frecuencia
-            f.write(f"\n📈 HIT RATES POR FRECUENCIA:\n")
+            # Desglosamos el rendimiento según la frecuencia semántica
+            f.write(f"\nHIT RATES POR FRECUENCIA:\n")
             for freq in FRECUENCIAS:
                 if freq in resumen['hit_rates_por_frecuencia']:
                     rate = resumen['hit_rates_por_frecuencia'][freq]
                     f.write(f"  {N_FREQ[freq]:8}: {rate:.2%}\n")
 
-            # Por longitud
-            f.write(f"\n📏 HIT RATES POR LONGITUD:\n")
+            # Desglosamos el rendimiento según el tamaño de las consultas
+            f.write(f"\nHIT RATES POR LONGITUD:\n")
             for long in LONGITUDES:
                 if long in resumen['hit_rates_por_longitud']:
                     rate = resumen['hit_rates_por_longitud'][long]
                     f.write(f"  {N_LONG[long]:8}: {rate:.2%}\n")
 
-            # Análisis del impacto en el canal lateral
+            # Evaluamos cómo la caché afecta a la información filtrada por timing
             if 'impacto_canal_lateral' in data:
-                f.write(f"\n🔍 IMPACTO EN CANAL LATERAL:\n")
+                f.write(f"\nIMPACTO EN CANAL LATERAL:\n")
                 impacto = data['impacto_canal_lateral']
                 f.write(f"  Varianza pre-caché: {impacto.get('var_sin_cache', 0):.2f}\n")
                 f.write(f"  Varianza con-caché: {impacto.get('var_con_cache', 0):.2f}\n")
@@ -387,7 +391,9 @@ def generar_reporte_cache(resultados_cache: Dict, k: int):
 
 def generar_graficas_densidad_superpuesta(resultados_completos: Dict, directorio_salida: str):
     """
-    Genera gráficas KDE superpuestas por longitud para cada k.
+    Crea gráficas de densidad que superponen las distribuciones de diferentes frecuencias.
+    Permite comparar visualmente cómo varía la latencia según la frecuencia semántica
+    manteniendo fija la longitud de la consulta.
     """
     for k in sorted(resultados_completos.keys()):
         fig, axes = plt.subplots(1, 3, figsize=(18, 6))
@@ -418,7 +424,9 @@ def generar_graficas_densidad_superpuesta(resultados_completos: Dict, directorio
 
 def generar_diagramas_caja(resultados_completos: Dict, directorio_salida: str):
     """
-    Genera boxplots por k para las 9 combinaciones frecuencia-longitud.
+    Crea diagramas de caja y bigotes para visualizar la dispersión de las latencias.
+    Muestra la mediana, cuartiles y valores atípicos para cada combinación de parámetros,
+    facilitando la identificación de patrones y anomalías.
     """
     for k in sorted(resultados_completos.keys()):
         datos_caja = []
@@ -446,7 +454,9 @@ def generar_diagramas_caja(resultados_completos: Dict, directorio_salida: str):
 
 def generar_grafica_comparativa(resultados_completos: Dict, directorio_salida: str):
     """
-    Genera gráfica de barras comparativa por k/frecuencia/longitud.
+    Construye una gráfica de barras agrupadas que compara todas las configuraciones.
+    Visualiza el impacto conjunto de los tres parámetros principales (k, frecuencia y longitud)
+    en la latencia media del sistema.
     """
     k_values = sorted(resultados_completos.keys())
     datos_grafica = []
@@ -500,7 +510,9 @@ def generar_grafica_comparativa(resultados_completos: Dict, directorio_salida: s
 
 def generar_mapa_calor(resultados_completos: Dict, directorio_salida: str):
     """
-    Genera mapa de calor frecuencia vs longitud para cada k.
+    Crea un mapa de calor que muestra la latencia como intensidad de color.
+    Facilita la identificación rápida de las combinaciones de parámetros
+    que producen mayores o menores latencias.
     """
     for k in sorted(resultados_completos.keys()):
         matriz = np.zeros((3, 3))
@@ -533,7 +545,8 @@ def generar_mapa_calor(resultados_completos: Dict, directorio_salida: str):
 
 def prueba_latencia_rag_con_cache(rag_chain, queries: Dict, k: int, num_iteraciones: int,
                                   config_name: str, embeddings, monitor: CacheMonitor):
-    """Ejecuta las queries con monitoreo de caché"""
+    """Ejecuta el conjunto de consultas midiendo el rendimiento y detectando hits de caché.
+    Recopila estadísticas detalladas para posterior análisis del comportamiento del sistema."""
     print(f"\n[*] Ejecutando pruebas con configuración: {config_name}, k={k}")
     cache_type = CACHE_CONFIGS.get(config_name, {}).get('tipo', 'none')
 
@@ -554,24 +567,24 @@ def prueba_latencia_rag_con_cache(rag_chain, queries: Dict, k: int, num_iteracio
             random.shuffle(todas_las_queries)
 
             for i, (texto_query, freq, long) in enumerate(todas_las_queries):
-                # Medir latencia
+                # Medimos el tiempo que tarda en procesarse la consulta
                 inicio = time.perf_counter()
                 respuesta = rag_chain.invoke({"input": texto_query})
                 fin = time.perf_counter()
 
                 latencia = (fin - inicio) * 1000
 
-                # Detectar cache hit con threshold adaptado al tipo de caché
+                # Determinamos si fue un acierto de caché basándonos en la latencia observada
                 es_cache_hit = detectar_cache_hit(
                     latencia,
                     cache_type=cache_type,
                     percentil_threshold=100.0
                 )
 
-                # Registrar en monitor
+                # Guardamos las métricas para análisis posterior
                 monitor.registrar_consulta(latencia, es_cache_hit, freq, long)
 
-                # Guardar datos
+                # Almacenamos toda la información de esta consulta
                 tiempos_brutos[freq][long].append({
                     'latencia': latencia,
                     'cache_hit': es_cache_hit,
@@ -590,7 +603,7 @@ def prueba_latencia_rag_con_cache(rag_chain, queries: Dict, k: int, num_iteracio
                 datos = tiempos_brutos[freq][long]
                 latencias = [d['latencia'] for d in datos]
 
-                # Filtrar outliers
+                # Eliminamos valores atípicos que distorsionarían las estadísticas
                 if latencias:
                     limite = np.percentile(latencias, 99)
                     latencias_limpias = [t for t in latencias if t <= limite]
@@ -618,7 +631,8 @@ def prueba_latencia_rag_con_cache(rag_chain, queries: Dict, k: int, num_iteracio
     return results, todas_latencias
 
 def generar_graficas_densidad(resultados_completos: Dict, directorio_salida: str):
-    """Generamos gráficas de densidad KDE para cada valor de k"""
+    """Crea visualizaciones de densidad de kernel para analizar la distribución
+    de latencias en cada configuración del experimento"""
 
     for k in sorted(resultados_completos.keys()):
         results = resultados_completos[k]
@@ -630,16 +644,16 @@ def generar_graficas_densidad(resultados_completos: Dict, directorio_salida: str
                 ax = axes[i, j]
                 data = results[frecuencia][longitud]['tiempos_limpios']
 
-                # KDE
+                # Generamos la estimación de densidad de kernel
                 if data:  # Verificar que hay datos
                     sns.kdeplot(data=data, ax=ax, fill=True, color='blue', alpha=0.6)
 
-                # Añadimos línea vertical para la media
+                # Marcamos la media para facilitar la interpretación
                 media = results[frecuencia][longitud]['media']
                 ax.axvline(media, color='red', linestyle='--', linewidth=2,
                           label=f'Mean: {media:.2f}ms')
 
-                # Configuramos el subplot
+                # Ajustamos las etiquetas y formato del gráfico
                 ax.set_title(f'{N_FREQ[frecuencia]} Frequency - {N_LONG[longitud]}')
                 ax.set_xlabel('Latency (ms)')
                 ax.set_ylabel('Density')
@@ -654,7 +668,9 @@ def generar_graficas_densidad(resultados_completos: Dict, directorio_salida: str
 
 def generar_graficas_rag_por_configuracion(resultados_globales: Dict):
     """
-    Genera todas las gráficas tipo PoC_LangChain_RAG para cada configuración de caché.
+    Produce el conjunto completo de visualizaciones para cada configuración de caché.
+    Esto permite comparar el comportamiento del sistema RAG bajo diferentes estrategias
+    de almacenamiento en caché.
     """
     for config_name, data in resultados_globales.items():
         resultados_por_k = data.get('resultados_por_k', {})
@@ -673,7 +689,8 @@ def generar_graficas_rag_por_configuracion(resultados_globales: Dict):
         generar_mapa_calor(resultados_por_k, directorio_config)
 
 def configurar_llm():
-    """Descargamos y cargamos el modelo de IA en la VRAM de la gráfica"""
+    """Inicializa el modelo de lenguaje que usaremos para generar las respuestas.
+    El modelo se carga en la GPU para acelerar la inferencia."""
     print("\n[*] Cargando el LLM (HuggingFaceTB/SmolLM2-135M-Instruct) en la tarjeta gráfica")
     model_id = "HuggingFaceTB/SmolLM2-135M-Instruct"
 
@@ -703,10 +720,10 @@ def main():
     print("INICIANDO PRUEBA RAG CON CACHÉ SEMÁNTICA")
     print("=" * 60)
 
-    # Crear directorio de salida si no existe
+    # Preparamos el directorio donde guardaremos los resultados
     os.makedirs(DIRECTORIO_SALIDA, exist_ok=True)
 
-    # 1. Verificar Redis y RediSearch
+    # Paso 1: Comprobamos que tenemos acceso a Redis y sus módulos necesarios
     print("\n[*] Verificando conexión con Redis...")
     redis_disponible = False
     redisearch_disponible = False
@@ -717,7 +734,7 @@ def main():
         print("[+] Redis conectado correctamente")
         redis_disponible = True
 
-        # Verificar RediSearch
+        # Verificamos que el módulo de búsqueda semántica esté instalado
         print("[*] Verificando módulo RediSearch...")
         if verificar_redis_stack():
             print("[+] RediSearch disponible - Caché semántica habilitada")
@@ -729,7 +746,7 @@ def main():
         print("[!] Redis no está disponible")
 
 
-    # Ajustar configuraciones según disponibilidad
+    # Adaptamos las pruebas según los componentes disponibles en el sistema
     if not redis_disponible:
         print("\n[!] Ejecutando solo con caché en memoria y sin caché")
         global CACHE_CONFIGS
@@ -745,15 +762,15 @@ def main():
             'cache_exacta': {'tipo': 'memory', 'umbral': None}
         }
 
-    # 2. Cargar queries
+    # Paso 2: Cargamos las consultas de prueba desde el archivo JSON
     with open(QUERIES_FILE, 'r', encoding='utf-8') as f:
         queries = json.load(f)
 
-    # 3. Configurar embeddings y LLM
+    # Paso 3: Inicializamos el modelo de embeddings y el modelo de lenguaje
     embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
     llm = configurar_llm()
 
-    # 4. Conectar a ChromaDB
+    # Paso 4: Establecemos conexión con la base de datos vectorial
     print("\n[*] Conectando a ChromaDB")
     vectorstore = Chroma(
         collection_name=COLLECTION_NAME,
@@ -761,10 +778,10 @@ def main():
         embedding_function=embeddings
     )
 
-    # Almacenar todos los resultados
+    # Estructura para guardar todos los datos del experimento
     resultados_globales = {}
 
-    # 5. Ejecutar experimentos para cada configuración de caché
+    # Paso 5: Realizamos las pruebas con cada estrategia de caché configurada
     for config_name in CACHE_CONFIGS.keys():
         print(f"\n{'='*60}")
         print(f"CONFIGURACIÓN: {config_name}")
@@ -780,7 +797,7 @@ def main():
             print(f"\n[*] Configurando retriever con k={k}")
             retriever = vectorstore.as_retriever(search_kwargs={"k": k})
 
-            # Crear cadena RAG
+            # Construimos el pipeline de recuperación y generación
             template = """Eres un asistente analítico. Usa el siguiente contexto para responder a la pregunta.
                         Regla estricta: Si la pregunta trata sobre un término de baja frecuencia, o si la información del contexto es escasa o poco relevante, tu respuesta debe ser ÚNICA y EXCLUSIVAMENTE la palabra "Baja". No añadas puntos, ni saludos, ni explicaciones adicionales.
                         Si hay abundante información, genera una respuesta detallada y extensa.
@@ -794,15 +811,15 @@ def main():
             document_chain = create_stuff_documents_chain(llm, prompt)
             rag_chain = create_retrieval_chain(retriever, document_chain)
 
-            # Configurar caché y monitor
+            # Activamos el sistema de caché correspondiente y su monitor
             monitor = configurar_cache(config_name, embeddings)
 
-            # Si la configuración de caché falló, saltar esta configuración
+            # Si hubo algún error de configuración, pasamos a la siguiente
             if monitor is None:
                 print(f"[!] Saltando configuración {config_name} debido a errores")
                 continue
 
-            # Calentar motor con manejo de errores detallado
+            # Hacemos una consulta inicial para preparar el sistema
             print("[*] Calentando motor RAG...")
             try:
                 print("    -> Intentando invoke de calentamiento...")
@@ -824,13 +841,13 @@ def main():
                 print(f"[!] Saltando configuración {config_name}")
                 continue
 
-            # Limpiar memoria
+            # Liberamos memoria antes de comenzar las pruebas reales
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
             time.sleep(2)
 
-            # Ejecutar pruebas
+            # Lanzamos el conjunto completo de consultas de prueba
             results, todas_latencias = prueba_latencia_rag_con_cache(
                 rag_chain, queries, k, NUM_ITERACIONES,
                 config_name, embeddings, monitor
@@ -840,17 +857,17 @@ def main():
                 resultados_config['resultados_por_k'][k] = results
                 resultados_config['latencias'].extend(todas_latencias)
 
-                # Obtener resumen del monitor
+                # Recopilamos las estadísticas finales del monitor
                 resumen_cache = monitor.obtener_resumen()
                 resultados_config['metricas_cache'][k] = resumen_cache
 
-                # Mostrar resumen inmediato
+                # Mostramos un resumen rápido en consola
                 print(f"\n[+] Resumen k={k}, config={config_name}:")
                 print(f"    Hit Rate: {resumen_cache['hit_rate']:.1%}")
                 print(f"    Latencia media hits: {resumen_cache['latencia_media_hits']:.2f}ms")
                 print(f"    Latencia media misses: {resumen_cache['latencia_media_misses']:.2f}ms")
 
-        # Calcular impacto en canal lateral
+        # Analizamos cómo la caché reduce la información filtrada por timing
         if 'sin_cache' in resultados_globales and config_name != 'sin_cache':
             var_sin_cache = np.var(resultados_globales['sin_cache']['latencias'])
             var_con_cache = np.var(resultados_config['latencias'])
@@ -867,15 +884,15 @@ def main():
 
         resultados_globales[config_name] = resultados_config
 
-    # 6. Generar visualizaciones y reportes
+    # Paso 6: Creamos todas las gráficas y documentos de análisis
     print(f"\n{'='*60}")
     print("GENERANDO VISUALIZACIONES Y REPORTES")
     print(f"{'='*60}")
 
-    # Generar gráficas de caché
+    # Producimos las visualizaciones específicas del análisis de caché
     resultados_cache_resumen = {}
     for config_name, data in resultados_globales.items():
-        # Combinar métricas de todos los k
+        # Agregamos las estadísticas de todos los valores de k probados
         resumen_combinado = {
             'total_queries': 0,
             'cache_hits': 0,
@@ -898,7 +915,7 @@ def main():
             resumen_combinado['latencia_media_hits'] = np.mean(resumen_combinado['hit_latencies']) if resumen_combinado['hit_latencies'] else 0
             resumen_combinado['latencia_media_misses'] = np.mean(resumen_combinado['miss_latencies']) if resumen_combinado['miss_latencies'] else 0
 
-            # Calcular por frecuencia (simplificado)
+            # Consolidamos las métricas agrupadas por categoría
             resumen_combinado['hit_rates_por_frecuencia'] = {}
             resumen_combinado['hit_rates_por_longitud'] = {}
 
@@ -919,7 +936,7 @@ def main():
     generar_graficas_cache(resultados_cache_resumen)
     generar_graficas_rag_por_configuracion(resultados_globales)
 
-    # Generar reportes por k
+    # Creamos informes detallados para cada valor de k
     for k in K_VALUES:
         reporte_data = {}
         for config_name in resultados_globales.keys():
@@ -930,7 +947,7 @@ def main():
                 }
         generar_reporte_cache(reporte_data, k)
 
-    # Guardar resultados en CSV
+    # Exportamos todos los datos a formato CSV para análisis externo
     filas = []
     for config_name, data in resultados_globales.items():
         for k, results in data['resultados_por_k'].items():
@@ -955,7 +972,7 @@ def main():
     df.to_csv(filename, index=False)
     print(f"\n[+] Resultados guardados en: {filename}")
 
-    # Mostrar resumen final
+    # Presentamos un resumen ejecutivo de los resultados principales
     print(f"\n{'='*60}")
     print("RESUMEN FINAL")
     print(f"{'='*60}")
