@@ -6,3 +6,16 @@ Imágenes/
 resultados*/
 matriz*/
 *.pdf
+.env
+.env.*
+!*.env.example
+node_modules/
+dist/
+build/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+Auditoria_RAG_Timing/data/
