@@ -23,7 +23,7 @@ class Target(Base):
     name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     endpoint_url: Mapped[str] = mapped_column(Text)
     http_method: Mapped[str] = mapped_column(String(10))
-    headers_encrypted: Mapped[str] = mapped_column(Text, default="")
+    headers: Mapped[dict[str, str]] = mapped_column(JSONB, default=dict)
     payload_template: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     timeout_seconds: Mapped[int] = mapped_column(Integer, default=30)
     verify_tls: Mapped[bool] = mapped_column(Boolean, default=True)

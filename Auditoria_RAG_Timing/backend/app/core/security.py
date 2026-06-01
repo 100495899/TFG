@@ -1,11 +1,8 @@
-import base64
-import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import bcrypt
 import jwt
-from cryptography.fernet import Fernet
 from fastapi import HTTPException, status
 
 from app.core.config import settings
@@ -34,16 +31,3 @@ def decode_access_token(token: str) -> str:
         return str(subject)
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
-
-
-def _fernet() -> Fernet:
-    digest = hashlib.sha256(settings.secret_encryption_key.encode("utf-8")).digest()
-    return Fernet(base64.urlsafe_b64encode(digest))
-
-
-def encrypt_text(value: str) -> str:
-    return _fernet().encrypt(value.encode("utf-8")).decode("utf-8")
-
-
-def decrypt_text(value: str) -> str:
-    return _fernet().decrypt(value.encode("utf-8")).decode("utf-8")

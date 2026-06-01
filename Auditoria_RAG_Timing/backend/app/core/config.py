@@ -10,7 +10,6 @@ class Settings(BaseSettings):
     redis_url: str
     jwt_secret_key: str
     jwt_expire_minutes: int
-    secret_encryption_key: str
     admin_email: str
     admin_password: str
     datasets_dir: str
