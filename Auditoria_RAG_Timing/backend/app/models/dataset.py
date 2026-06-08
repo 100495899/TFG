@@ -16,6 +16,5 @@ class Dataset(Base):
     file_path: Mapped[str] = mapped_column(Text)
     original_filename: Mapped[str] = mapped_column(String(255))
     total_queries: Mapped[int] = mapped_column(Integer)
-    sha256: Mapped[str] = mapped_column(String(64), index=True)
-    schema_version: Mapped[str] = mapped_column(String(50), default="flat-v1")
+    schema_version: Mapped[str] = mapped_column(String(50), default="grouped-es-v1")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
