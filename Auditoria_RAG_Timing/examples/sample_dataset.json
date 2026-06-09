@@ -1,0 +1,38 @@
+{
+  "alta_frecuencia": {
+    "corta": [
+      "Time flies every day",
+      "Man needs more time"
+    ],
+    "media": [
+      "Every man needs time to reflect on the days that have passed by quickly"
+    ],
+    "larga": [
+      "The wise old man sat quietly reflecting on how many days had passed since he first understood that time was the most precious commodity any man could possess"
+    ]
+  },
+  "media_frecuencia": {
+    "corta": [
+      "People face the world",
+      "Friend by my side"
+    ],
+    "media": [
+      "People around the world gather at night to hear every word spoken clearly"
+    ],
+    "larga": [
+      "In this vast and complex world people search for meaning while friends stand by their side offering support and comfort during the darkest hours of the night"
+    ]
+  },
+  "baja_frecuencia": {
+    "corta": [
+      "Bitcoin mining requires electricity",
+      "Asgard destroyed by Ragnarok"
+    ],
+    "media": [
+      "Instagram influencers are losing followers because the algorithm changed how content gets distributed"
+    ],
+    "larga": [
+      "Bitcoin cryptocurrency mining operations consume more electricity than entire countries while blockchain technology promises to revolutionize financial systems through decentralized ledgers and peer to peer transactions"
+    ]
+  }
+}
