@@ -9,7 +9,7 @@ from app.db.session import get_session
 from app.models.audit import AuditSession
 from app.models.target import Target
 from app.schemas.target import TargetCreate, TargetRead, TargetTestRequest, TargetTestResponse, TargetUpdate
-from app.services.http_measurement import measure_target
+from app.services.http_measurement import create_http_client, measure_target
 from app.services.target_service import validate_target_payload
 
 router = APIRouter(prefix="/targets", tags=["targets"], dependencies=[Depends(get_current_user)])
@@ -26,7 +26,6 @@ async def create_target(payload: TargetCreate, session: AsyncSession = Depends(g
     target = Target(
         name=payload.name,
         endpoint_url=payload.endpoint_url,
-        http_method=payload.http_method,
         headers=payload.headers,
         payload_template=payload.payload_template,
         timeout_seconds=payload.timeout_seconds,
@@ -54,7 +53,6 @@ async def update_target(target_id: uuid.UUID, payload: TargetUpdate, session: As
         raise HTTPException(status_code=404, detail="Target not found")
     target.name = payload.name
     target.endpoint_url = payload.endpoint_url
-    target.http_method = payload.http_method
     target.headers = payload.headers
     target.payload_template = payload.payload_template
     target.timeout_seconds = payload.timeout_seconds
@@ -82,5 +80,6 @@ async def test_target(target_id: uuid.UUID, payload: TargetTestRequest, session:
     target = await session.get(Target, target_id)
     if not target:
         raise HTTPException(status_code=404, detail="Target not found")
-    result = await measure_target(target, payload.query)
+    async with create_http_client(target) as client:
+        result = await measure_target(client, target, payload.query)
     return TargetTestResponse(ok=not result.is_error, **result.__dict__)
