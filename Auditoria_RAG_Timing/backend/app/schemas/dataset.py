@@ -38,7 +38,6 @@ class DatasetRead(BaseModel):
     name: str
     original_filename: str
     total_queries: int
-    schema_version: str
     created_at: datetime
 
     model_config = {"from_attributes": True}

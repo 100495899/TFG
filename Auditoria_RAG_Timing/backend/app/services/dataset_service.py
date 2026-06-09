@@ -21,8 +21,6 @@ LENGTH_GROUPS = {
     "larga": "long",
 }
 
-SUPPORTED_DATASET_SCHEMA = "grouped-es-v1"
-
 DATASET_FORMAT_EXAMPLE = {
     "alta_frecuencia": {
         "corta": ["Consulta corta de frecuencia alta"],
@@ -40,14 +38,6 @@ DATASET_FORMAT_EXAMPLE = {
         "larga": ["Consulta larga de frecuencia baja"],
     },
 }
-
-
-def ensure_supported_schema(schema_version: str) -> None:
-    if schema_version != SUPPORTED_DATASET_SCHEMA:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="El dataset usa un formato antiguo. Vuelve a subirlo con el formato agrupado actual.",
-        )
 
 
 def invalid_dataset_format(errors: list[dict[str, Any]] | None = None) -> HTTPException:

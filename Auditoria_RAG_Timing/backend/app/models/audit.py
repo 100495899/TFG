@@ -31,8 +31,6 @@ class AuditSession(Base):
     target_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("targets.id"))
     dataset_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("datasets.id"))
     status: Mapped[str] = mapped_column(String(30), index=True, default=AuditStatus.PENDING)
-    delay_min_ms: Mapped[int] = mapped_column(Integer, default=0)
-    delay_max_ms: Mapped[int] = mapped_column(Integer, default=0)
     calibration_requests: Mapped[int] = mapped_column(Integer, default=0)
     progress_current: Mapped[int] = mapped_column(Integer, default=0)
     progress_total: Mapped[int] = mapped_column(Integer, default=0)

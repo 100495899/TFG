@@ -12,7 +12,6 @@ from app.models.dataset import Dataset
 from app.schemas.dataset import DatasetPreview, DatasetRead
 from app.services.dataset_service import (
     distribution,
-    ensure_supported_schema,
     load_dataset_file,
     parse_dataset_upload,
     save_dataset_file,
@@ -58,7 +57,6 @@ async def preview_dataset(dataset_id: uuid.UUID, session: AsyncSession = Depends
     dataset = await session.get(Dataset, dataset_id)
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
-    ensure_supported_schema(dataset.schema_version)
     queries = load_dataset_file(dataset.file_path)
     return DatasetPreview(dataset=DatasetRead.model_validate(dataset), preview=queries[:20], distribution=distribution(queries))
 
