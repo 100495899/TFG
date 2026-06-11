@@ -199,7 +199,6 @@ export function TargetsPage() {
                   Test
                 </Button>
                 <Button
-                  className="bg-red-700"
                   onClick={() => setTargetToDelete(target)}
                 >
                   Delete

@@ -73,6 +73,18 @@ export type AuditStatus = Pick<AuditSession, "id" | "status" | "progress_current
   mean_full_response_ms: number | null;
 };
 
+export type AuditDashboardItem = AuditStatus & {
+  target_id: string;
+  target_name: string;
+  dataset_id: string;
+  dataset_name: string;
+  random_seed: number;
+  calibration_requests: number;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+};
+
 export type AuditResult = {
   id: string;
   request_index: number;
@@ -195,6 +207,7 @@ export const api = {
   datasetPreview: (id: string) => request<DatasetPreview>(`/api/v1/datasets/${id}/preview`),
   deleteDataset: (id: string) => request(`/api/v1/datasets/${id}`, { method: "DELETE" }),
   audits: () => request<AuditSession[]>("/api/v1/audits"),
+  auditDashboard: () => request<AuditDashboardItem[]>("/api/v1/audits/dashboard"),
   startAudit: (payload: unknown) => request<{ session_id: string }>("/api/v1/audits/start", { method: "POST", body: JSON.stringify(payload) }),
   auditStatus: (id: string) => request<AuditStatus>(`/api/v1/audits/${id}/status`),
   auditResults: (id: string, page: number, filters: ResultFilters = {}) => {

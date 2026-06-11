@@ -85,6 +85,8 @@ type ConfirmDialogProps = {
   title: string;
   description: string;
   confirmLabel?: string;
+  pendingLabel?: string;
+  confirmVariant?: "primary" | "secondary" | "danger";
   onConfirm: () => Promise<void>;
   onClose: () => void;
 };
@@ -94,6 +96,8 @@ export function ConfirmDialog({
   title,
   description,
   confirmLabel = "Delete",
+  pendingLabel = "Deleting...",
+  confirmVariant = "danger",
   onConfirm,
   onClose
 }: ConfirmDialogProps) {
@@ -125,8 +129,8 @@ export function ConfirmDialog({
         <Button type="button" variant="secondary" onClick={onClose} disabled={isSubmitting}>
           Cancel
         </Button>
-        <Button type="button" onClick={confirm} disabled={isSubmitting}>
-          {isSubmitting ? "Deleting..." : confirmLabel}
+        <Button type="button" variant={confirmVariant} onClick={confirm} disabled={isSubmitting}>
+          {isSubmitting ? pendingLabel : confirmLabel}
         </Button>
       </div>
     </Modal>

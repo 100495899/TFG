@@ -48,6 +48,18 @@ class AuditStatus(BaseModel):
     mean_full_response_ms: float | None
 
 
+class AuditDashboardItem(AuditStatus):
+    target_id: uuid.UUID
+    target_name: str
+    dataset_id: uuid.UUID
+    dataset_name: str
+    random_seed: int
+    calibration_requests: int
+    created_at: datetime
+    started_at: datetime | None
+    completed_at: datetime | None
+
+
 class AuditResultRead(BaseModel):
     id: uuid.UUID
     session_id: uuid.UUID

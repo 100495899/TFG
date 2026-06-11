@@ -11,6 +11,7 @@ from app.models.audit import AuditResult, AuditSession
 from app.models.dataset import Dataset
 from app.models.target import Target
 from app.schemas.audit import (
+    AuditDashboardItem,
     AuditSessionRead,
     AuditStartRequest,
     AuditStartResponse,
@@ -28,6 +29,49 @@ router = APIRouter(prefix="/audits", tags=["audits"], dependencies=[Depends(get_
 @router.get("", response_model=list[AuditSessionRead])
 async def list_audits(session: AsyncSession = Depends(get_session)) -> list[AuditSession]:
     return (await session.execute(select(AuditSession).order_by(AuditSession.created_at.desc()))).scalars().all()
+
+
+@router.get("/dashboard", response_model=list[AuditDashboardItem])
+async def dashboard_audits(session: AsyncSession = Depends(get_session)) -> list[AuditDashboardItem]:
+    rows = (
+        await session.execute(
+            select(
+                AuditSession,
+                Target.name,
+                Dataset.name,
+                func.count(AuditResult.id).filter(AuditResult.is_error.is_(True)),
+                func.avg(AuditResult.ttfb_ms).filter(AuditResult.is_error.is_(False)),
+                func.avg(AuditResult.full_response_ms).filter(AuditResult.is_error.is_(False)),
+            )
+            .join(Target, Target.id == AuditSession.target_id)
+            .join(Dataset, Dataset.id == AuditSession.dataset_id)
+            .outerjoin(AuditResult, AuditResult.session_id == AuditSession.id)
+            .group_by(AuditSession.id, Target.name, Dataset.name)
+            .order_by(AuditSession.created_at.desc())
+        )
+    ).all()
+    return [
+        AuditDashboardItem(
+            id=audit.id,
+            target_id=audit.target_id,
+            target_name=target_name,
+            dataset_id=audit.dataset_id,
+            dataset_name=dataset_name,
+            status=audit.status,
+            calibration_requests=audit.calibration_requests,
+            progress_current=audit.progress_current,
+            progress_total=audit.progress_total,
+            random_seed=audit.random_seed,
+            error_message=audit.error_message,
+            error_count=error_count or 0,
+            mean_ttfb_ms=float(mean_ttfb) if mean_ttfb is not None else None,
+            mean_full_response_ms=float(mean_full_response) if mean_full_response is not None else None,
+            created_at=audit.created_at,
+            started_at=audit.started_at,
+            completed_at=audit.completed_at,
+        )
+        for audit, target_name, dataset_name, error_count, mean_ttfb, mean_full_response in rows
+    ]
 
 
 @router.post("/start", response_model=AuditStartResponse)

@@ -9,7 +9,6 @@ import { DashboardPage } from "./features/audits/DashboardPage";
 import { TargetsPage } from "./features/targets/TargetsPage";
 import { DatasetsPage } from "./features/datasets/DatasetsPage";
 import { NewAuditPage } from "./features/audits/NewAuditPage";
-import { RunningAuditPage } from "./features/audits/RunningAuditPage";
 import { ResultsPage } from "./features/audits/ResultsPage";
 import { api } from "./api/client";
 
@@ -45,7 +44,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
             <Route path="targets" element={<TargetsPage />} />
             <Route path="datasets" element={<DatasetsPage />} />
             <Route path="audits/new" element={<NewAuditPage />} />
-            <Route path="audits/running/:id" element={<RunningAuditPage />} />
+            <Route path="audits/running/:id" element={<Navigate to="/dashboard" replace />} />
             <Route path="audits/results/:id" element={<ResultsPage />} />
           </Route>
         </Routes>

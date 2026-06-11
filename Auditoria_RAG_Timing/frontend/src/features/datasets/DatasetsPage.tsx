@@ -111,7 +111,6 @@ export function DatasetsPage() {
                   Preview
                 </Button>
                 <Button
-                  className="bg-red-700"
                   onClick={() => setDatasetToDelete(dataset)}
                 >
                   Delete
