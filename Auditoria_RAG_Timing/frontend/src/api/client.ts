@@ -127,6 +127,29 @@ export type ResultFilters = {
   status_code?: string;
 };
 
+type ApiErrorDetail =
+  | string
+  | Array<{ msg?: string; message?: string }>
+  | {
+      message?: string;
+      errors?: Array<{ msg?: string; message?: string }>;
+    };
+
+function apiErrorMessage(detail: ApiErrorDetail | undefined, fallback: string) {
+  if (typeof detail === "string") return detail;
+
+  if (Array.isArray(detail)) {
+    return detail[0]?.msg ?? detail[0]?.message ?? fallback;
+  }
+
+  if (detail && typeof detail === "object") {
+    const validationMessage = detail.errors?.[0]?.msg ?? detail.errors?.[0]?.message;
+    return validationMessage ? `${detail.message ?? fallback} ${validationMessage}` : detail.message ?? fallback;
+  }
+
+  return fallback;
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   if (!(options.body instanceof FormData) && options.body && !headers.has("Content-Type")) {
@@ -139,6 +162,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     }
   }
   if (!response.ok) {
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      const errorBody = await response.json() as { detail?: ApiErrorDetail };
+      throw new Error(apiErrorMessage(errorBody.detail, response.statusText));
+    }
     const text = await response.text();
     throw new Error(text || response.statusText);
   }
