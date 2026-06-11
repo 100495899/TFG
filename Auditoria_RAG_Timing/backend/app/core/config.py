@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     redis_url: str
     jwt_secret_key: str
     jwt_expire_minutes: int
+    session_cookie_secure: bool
     admin_email: str
     admin_password: str
     datasets_dir: str

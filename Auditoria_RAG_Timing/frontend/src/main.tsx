@@ -1,6 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import "./index.css";
 import { AppLayout } from "./components/AppLayout";
@@ -11,12 +11,18 @@ import { DatasetsPage } from "./features/datasets/DatasetsPage";
 import { NewAuditPage } from "./features/audits/NewAuditPage";
 import { RunningAuditPage } from "./features/audits/RunningAuditPage";
 import { ResultsPage } from "./features/audits/ResultsPage";
-import { getToken } from "./api/client";
+import { api } from "./api/client";
 
 const queryClient = new QueryClient();
 
 function Protected({ children }: { children: React.ReactNode }) {
-  if (!getToken()) return <Navigate to="/login" replace />;
+  const session = useQuery({
+    queryKey: ["current-user"],
+    queryFn: api.me,
+    retry: false
+  });
+  if (session.isPending) return <div className="min-h-screen grid place-items-center">Checking session...</div>;
+  if (session.isError) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
 

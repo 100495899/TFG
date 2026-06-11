@@ -7,6 +7,8 @@ from fastapi import HTTPException, status
 
 from app.core.config import settings
 
+SESSION_COOKIE_NAME = "rag_audit_session"
+
 
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")

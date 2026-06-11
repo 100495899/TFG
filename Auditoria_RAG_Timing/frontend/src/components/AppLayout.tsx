@@ -1,6 +1,7 @@
 import { Activity, Database, LogOut, PlayCircle, Server } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { setToken } from "../api/client";
+import { api } from "../api/client";
 
 const nav = [
   { to: "/dashboard", label: "Dashboard", icon: Activity },
@@ -11,6 +12,7 @@ const nav = [
 
 export function AppLayout() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   return (
     <div className="min-h-screen grid grid-cols-[240px_1fr]">
       <aside className="bg-white border-r border-slate-200 p-4 flex flex-col">
@@ -34,9 +36,10 @@ export function AppLayout() {
         </nav>
         <button
           className="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-slate-700 hover:bg-slate-100"
-          onClick={() => {
-            setToken(null);
-            navigate("/login");
+          onClick={async () => {
+            await api.logout();
+            queryClient.clear();
+            navigate("/login", { replace: true });
           }}
         >
           <LogOut size={17} />
