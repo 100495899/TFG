@@ -18,7 +18,7 @@ from app.schemas.audit import (
     AuditStatus,
     ResultsPage,
 )
-from app.services.export_service import export_results_csv, export_results_json
+from app.services.export_service import export_results_csv, export_summary_csv
 from app.services.statistics_service import build_summary
 from app.workers.arq_worker import redis_settings_from_url
 from app.core.config import settings
@@ -194,7 +194,11 @@ async def export_csv(audit_id: uuid.UUID, session: AsyncSession = Depends(get_se
     return Response(content=content, media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=audit_{audit_id}.csv"})
 
 
-@router.get("/{audit_id}/export.json")
-async def export_json(audit_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> Response:
-    content = await export_results_json(session, audit_id)
-    return Response(content=content, media_type="application/json", headers={"Content-Disposition": f"attachment; filename=audit_{audit_id}.json"})
+@router.get("/{audit_id}/export-summary.csv")
+async def export_summary(audit_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> Response:
+    content = await export_summary_csv(session, audit_id)
+    return Response(
+        content=content,
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=audit_{audit_id}_summary.csv"},
+    )

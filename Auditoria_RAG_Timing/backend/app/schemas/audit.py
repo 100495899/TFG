@@ -88,8 +88,12 @@ class ResultsPage(BaseModel):
 
 
 class GroupStats(BaseModel):
-    frequency: str
+    frequency: str | None = None
+    length: str | None = None
     count: int
+    raw_count: int
+    error_count: int
+    outlier_count: int
     mean_ms: float | None
     median_ms: float | None
     std_ms: float | None
@@ -98,6 +102,7 @@ class GroupStats(BaseModel):
     p95_ms: float | None
     min_ms: float | None
     max_ms: float | None
+    p99_threshold_ms: float | None
     error_rate: float
 
 
@@ -106,14 +111,44 @@ class ComparisonStats(BaseModel):
     group_b: str
     mean_difference_ms: float | None
     median_difference_ms: float | None
-    welch_p_value: float | None
-    mann_whitney_p_value: float | None
-    cohens_d: float | None
+    p_value: float | None
+    effect_size: float | None
     evidence: str
+
+
+class AuditSummaryMetadata(BaseModel):
+    target_id: uuid.UUID
+    target_name: str
+    dataset_id: uuid.UUID
+    dataset_name: str
+    status: str
+    random_seed: int
+    calibration_requests: int
+    total_requests: int
+    successful_requests: int
+    error_requests: int
+    started_at: datetime | None
+    completed_at: datetime | None
+    duration_seconds: float | None
+
+
+class AnalysisPoint(BaseModel):
+    request_index: int
+    frequency: str
+    length: str
+    ttfb_ms: float
+    full_response_ms: float | None
+    is_outlier: bool
 
 
 class AuditSummary(BaseModel):
     session_id: uuid.UUID
     metric: str
+    metadata: AuditSummaryMetadata
+    overall: GroupStats
+    overall_full_response: GroupStats
     groups: list[GroupStats]
+    by_length: list[GroupStats]
+    by_frequency_length: list[GroupStats]
     comparisons: list[ComparisonStats]
+    points: list[AnalysisPoint]

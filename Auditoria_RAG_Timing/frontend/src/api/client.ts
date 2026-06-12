@@ -111,25 +111,62 @@ export type ResultsPage = {
 export type Summary = {
   session_id: string;
   metric: string;
-  groups: Array<{
-    frequency: string;
-    count: number;
-    mean_ms: number | null;
-    median_ms: number | null;
-    std_ms: number | null;
-    p95_ms: number | null;
-    error_rate: number;
-  }>;
+  metadata: {
+    target_id: string;
+    target_name: string;
+    dataset_id: string;
+    dataset_name: string;
+    status: string;
+    random_seed: number;
+    calibration_requests: number;
+    total_requests: number;
+    successful_requests: number;
+    error_requests: number;
+    started_at: string | null;
+    completed_at: string | null;
+    duration_seconds: number | null;
+  };
+  overall: SummaryGroup;
+  overall_full_response: SummaryGroup;
+  groups: SummaryGroup[];
+  by_length: SummaryGroup[];
+  by_frequency_length: SummaryGroup[];
   comparisons: Array<{
     group_a: string;
     group_b: string;
     mean_difference_ms: number | null;
     median_difference_ms: number | null;
-    welch_p_value: number | null;
-    mann_whitney_p_value: number | null;
-    cohens_d: number | null;
+    p_value: number | null;
+    effect_size: number | null;
     evidence: string;
   }>;
+  points: Array<{
+    request_index: number;
+    frequency: string;
+    length: string;
+    ttfb_ms: number;
+    full_response_ms: number | null;
+    is_outlier: boolean;
+  }>;
+};
+
+export type SummaryGroup = {
+  frequency: string | null;
+  length: string | null;
+  count: number;
+  raw_count: number;
+  error_count: number;
+  outlier_count: number;
+  mean_ms: number | null;
+  median_ms: number | null;
+  std_ms: number | null;
+  p25_ms: number | null;
+  p75_ms: number | null;
+  p95_ms: number | null;
+  min_ms: number | null;
+  max_ms: number | null;
+  p99_threshold_ms: number | null;
+  error_rate: number;
 };
 
 export type ResultFilters = {
@@ -162,30 +199,45 @@ function apiErrorMessage(detail: ApiErrorDetail | undefined, fallback: string) {
   return fallback;
 }
 
+function handleUnauthorized(response: Response) {
+  if (response.status === 401 && window.location.pathname !== "/login") {
+    window.location.replace("/login");
+  }
+}
+
+async function responseError(response: Response): Promise<Error> {
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    const errorBody = await response.json() as { detail?: ApiErrorDetail };
+    return new Error(apiErrorMessage(errorBody.detail, response.statusText));
+  }
+  const text = await response.text();
+  return new Error(text || response.statusText);
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   if (!(options.body instanceof FormData) && options.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
   const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers, credentials: "include" });
-  if (response.status === 401) {
-    if (window.location.pathname !== "/login") {
-      window.location.replace("/login");
-    }
-  }
+  handleUnauthorized(response);
   if (!response.ok) {
-    const contentType = response.headers.get("content-type") || "";
-    if (contentType.includes("application/json")) {
-      const errorBody = await response.json() as { detail?: ApiErrorDetail };
-      throw new Error(apiErrorMessage(errorBody.detail, response.statusText));
-    }
-    const text = await response.text();
-    throw new Error(text || response.statusText);
+    throw await responseError(response);
   }
   if (response.status === 204) return undefined as T;
   const contentType = response.headers.get("content-type") || "";
   if (contentType.includes("application/json")) return response.json();
   return response.text() as T;
+}
+
+async function requestBlob(path: string): Promise<Blob> {
+  const response = await fetch(`${API_BASE_URL}${path}`, { credentials: "include" });
+  handleUnauthorized(response);
+  if (!response.ok) {
+    throw await responseError(response);
+  }
+  return response.blob();
 }
 
 export const api = {
@@ -221,5 +273,6 @@ export const api = {
   auditSummary: (id: string) => request<Summary>(`/api/v1/audits/${id}/summary`),
   abortAudit: (id: string) => request(`/api/v1/audits/${id}/abort`, { method: "POST" }),
   deleteAudit: (id: string) => request(`/api/v1/audits/${id}`, { method: "DELETE" }),
-  exportUrl: (id: string, format: "csv" | "json") => `${API_BASE_URL}/api/v1/audits/${id}/export.${format}`
+  downloadAuditCsv: (id: string, type: "summary" | "raw") =>
+    requestBlob(`/api/v1/audits/${id}/${type === "summary" ? "export-summary.csv" : "export.csv"}`)
 };
