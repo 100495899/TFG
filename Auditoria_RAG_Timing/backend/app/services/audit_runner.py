@@ -1,3 +1,4 @@
+import asyncio
 import random
 import uuid
 from datetime import datetime, timezone
@@ -101,6 +102,12 @@ async def run_audit(session: AsyncSession, session_id: uuid.UUID) -> None:
         audit.status = "COMPLETED"
         audit.completed_at = datetime.now(timezone.utc)
         await session.commit()
+    except asyncio.CancelledError:
+        audit.status = "FAILED"
+        audit.error_message = "Audit worker was cancelled or exceeded its execution timeout"
+        audit.completed_at = datetime.now(timezone.utc)
+        await session.commit()
+        raise
     except Exception as exc:
         audit.status = "FAILED"
         audit.error_message = str(exc)

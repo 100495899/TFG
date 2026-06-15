@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     max_dataset_size_mb: int
     max_queries_per_audit: int
     max_concurrent_audits: int
+    audit_job_timeout_seconds: int
     backend_cors_origin: str
     api_v1_prefix: str
 
