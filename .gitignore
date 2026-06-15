@@ -19,3 +19,4 @@ __pycache__/
 .ruff_cache/
 .venv/
 Auditoria_RAG_Timing/data/
+TFG_investigacion*

@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+chromadb
+sentence-transformers
+langchain
+langchain-chroma
+langchain-huggingface
+langchain-classic
+transformers
+accelerate
