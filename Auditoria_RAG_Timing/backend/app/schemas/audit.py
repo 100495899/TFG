@@ -112,7 +112,6 @@ class ComparisonStats(BaseModel):
     mean_difference_ms: float | None
     median_difference_ms: float | None
     p_value: float | None
-    effect_size: float | None
     evidence: str
 
 

@@ -137,7 +137,6 @@ export type Summary = {
     mean_difference_ms: number | null;
     median_difference_ms: number | null;
     p_value: number | null;
-    effect_size: number | null;
     evidence: string;
   }>;
   points: Array<{

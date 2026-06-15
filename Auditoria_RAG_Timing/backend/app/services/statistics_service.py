@@ -29,15 +29,14 @@ def _safe_float(value) -> float | None:
     return float(value)
 
 
-def _evidence(p_value: float | None, d: float | None, count_a: int, count_b: int) -> str:
-    if count_a < 30 or count_b < 30 or p_value is None or d is None:
+def _evidence(p_value: float | None, count_a: int, count_b: int) -> str:
+    if count_a < 30 or count_b < 30 or p_value is None:
         return "insufficient"
-    abs_d = abs(d)
-    if p_value < 0.001 and abs_d >= 0.8:
+    if p_value < 0.001:
         return "strong"
-    if p_value < 0.01 and abs_d >= 0.5:
+    if p_value < 0.01:
         return "moderate"
-    if p_value < 0.05 and abs_d >= 0.2:
+    if p_value < 0.05:
         return "weak"
     return "insufficient"
 
@@ -220,13 +219,11 @@ async def build_summary(session: AsyncSession, session_id: uuid.UUID) -> AuditSu
     comparisons: list[ComparisonStats] = []
     for a, b in itertools.combinations(FREQUENCIES, 2):
         va, vb = values_by_group[a], values_by_group[b]
-        p_value = effect_size = mean_diff = median_diff = None
+        p_value = mean_diff = median_diff = None
         if len(va) >= 2 and len(vb) >= 2:
             mean_diff = float(np.mean(vb) - np.mean(va))
             median_diff = float(np.median(vb) - np.median(va))
             p_value = float(stats.ttest_ind(va, vb, equal_var=False).pvalue)
-            pooled = np.sqrt((np.var(va) + np.var(vb)) / 2)
-            effect_size = float((np.mean(vb) - np.mean(va)) / pooled) if pooled > 0 else None
         comparisons.append(
             ComparisonStats(
                 group_a=a,
@@ -234,8 +231,7 @@ async def build_summary(session: AsyncSession, session_id: uuid.UUID) -> AuditSu
                 mean_difference_ms=mean_diff,
                 median_difference_ms=median_diff,
                 p_value=p_value,
-                effect_size=effect_size,
-                evidence=_evidence(p_value, effect_size, len(va), len(vb)),
+                evidence=_evidence(p_value, len(va), len(vb)),
             )
         )
 

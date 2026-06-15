@@ -355,17 +355,16 @@ export function ResultsPage() {
       <Card>
         <h2 className="font-semibold">Statistical comparisons by frequency</h2>
         <p className="mt-1 text-xs text-slate-500">
-          The p-value comes from Welch&apos;s test. Effect size expresses the standardized magnitude of the timing difference.
+          The p-value comes from Welch&apos;s test. Lower values indicate stronger evidence of a temporal difference.
         </p>
         <div className="mt-3 overflow-x-auto">
-          <table className="w-full min-w-[760px] text-sm">
+          <table className="w-full min-w-[680px] text-sm">
             <thead>
               <tr className="border-b text-left text-xs text-slate-500">
                 <th className="py-2">Groups</th>
                 <th>Mean difference</th>
                 <th>Median difference</th>
                 <th>P-value</th>
-                <th>Effect size</th>
                 <th>Evidence</th>
               </tr>
             </thead>
@@ -376,7 +375,6 @@ export function ResultsPage() {
                   <td>{milliseconds(comparison.mean_difference_ms)}</td>
                   <td>{milliseconds(comparison.median_difference_ms)}</td>
                   <td>{comparison.p_value?.toExponential(2) ?? "-"}</td>
-                  <td>{comparison.effect_size?.toFixed(2) ?? "-"}</td>
                   <td><EvidenceBadge value={comparison.evidence} /></td>
                 </tr>
               ))}
