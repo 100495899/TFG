@@ -41,17 +41,24 @@ def _evidence(p_value: float | None, count_a: int, count_b: int) -> str:
     return "insufficient"
 
 
-def _filter_upper_percentile(
+def _filter_extreme_percentiles(
     values: list[float],
-    percentile: float = 99,
+    lower_percentile: float = 1,
+    upper_percentile: float = 99,
     minimum_sample_size: int = 100,
-) -> tuple[list[float], float | None]:
+) -> tuple[list[float], float | None, float | None]:
     if not values:
-        return [], None
+        return [], None, None
     if len(values) < minimum_sample_size:
-        return values.copy(), None
-    threshold = float(np.percentile(np.array(values, dtype=float), percentile))
-    return [value for value in values if value <= threshold], threshold
+        return values.copy(), None, None
+    arr = np.array(values, dtype=float)
+    lower_threshold = float(np.percentile(arr, lower_percentile))
+    upper_threshold = float(np.percentile(arr, upper_percentile))
+    return (
+        [value for value in values if lower_threshold <= value <= upper_threshold],
+        lower_threshold,
+        upper_threshold,
+    )
 
 
 def _group_stats(
@@ -61,7 +68,8 @@ def _group_stats(
     frequency: str | None = None,
     length: str | None = None,
     outlier_count: int = 0,
-    p99_threshold_ms: float | None = None,
+    lower_outlier_threshold_ms: float | None = None,
+    upper_outlier_threshold_ms: float | None = None,
 ) -> GroupStats:
     arr = np.array(values, dtype=float)
     error_count = sum(1 for row in rows if row.is_error)
@@ -80,7 +88,8 @@ def _group_stats(
         p95_ms=_safe_float(np.percentile(arr, 95)) if len(arr) else None,
         min_ms=_safe_float(np.min(arr)) if len(arr) else None,
         max_ms=_safe_float(np.max(arr)) if len(arr) else None,
-        p99_threshold_ms=p99_threshold_ms,
+        lower_outlier_threshold_ms=lower_outlier_threshold_ms,
+        upper_outlier_threshold_ms=upper_outlier_threshold_ms,
         error_rate=(error_count / len(rows)) if rows else 0.0,
     )
 
@@ -88,9 +97,12 @@ def _group_stats(
 def _clean_values_by_cell(
     rows: list[AuditResult],
     value_getter: Callable[[AuditResult], float | None],
-) -> tuple[dict[tuple[str, str], list[float]], dict[tuple[str, str], float | None]]:
+) -> tuple[
+    dict[tuple[str, str], list[float]],
+    dict[tuple[str, str], tuple[float | None, float | None]],
+]:
     cleaned: dict[tuple[str, str], list[float]] = {}
-    thresholds: dict[tuple[str, str], float | None] = {}
+    thresholds: dict[tuple[str, str], tuple[float | None, float | None]] = {}
     for frequency in FREQUENCIES:
         for length in LENGTHS:
             values = [
@@ -101,7 +113,8 @@ def _clean_values_by_cell(
                 and not row.is_error
                 and (value := value_getter(row)) is not None
             ]
-            cleaned[(frequency, length)], thresholds[(frequency, length)] = _filter_upper_percentile(values)
+            cleaned[(frequency, length)], lower, upper = _filter_extreme_percentiles(values)
+            thresholds[(frequency, length)] = (lower, upper)
     return cleaned, thresholds
 
 
@@ -133,9 +146,11 @@ async def build_summary(session: AsyncSession, session_id: uuid.UUID) -> AuditSu
         if not row.is_error
         and row.ttfb_ms is not None
         and (
-            threshold := ttfb_thresholds.get((row.frequency_tag, row.length_tag))
+            thresholds := ttfb_thresholds.get((row.frequency_tag, row.length_tag))
         ) is not None
-        and row.ttfb_ms > threshold
+        and thresholds[0] is not None
+        and thresholds[1] is not None
+        and (row.ttfb_ms < thresholds[0] or row.ttfb_ms > thresholds[1])
     }
 
     by_frequency_length: list[GroupStats] = []
@@ -151,7 +166,8 @@ async def build_summary(session: AsyncSession, session_id: uuid.UUID) -> AuditSu
                     frequency=frequency,
                     length=length,
                     outlier_count=successful_count - len(values),
-                    p99_threshold_ms=ttfb_thresholds[(frequency, length)],
+                    lower_outlier_threshold_ms=ttfb_thresholds[(frequency, length)][0],
+                    upper_outlier_threshold_ms=ttfb_thresholds[(frequency, length)][1],
                 )
             )
 

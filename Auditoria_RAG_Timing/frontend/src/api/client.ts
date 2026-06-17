@@ -164,7 +164,8 @@ export type SummaryGroup = {
   p95_ms: number | null;
   min_ms: number | null;
   max_ms: number | null;
-  p99_threshold_ms: number | null;
+  lower_outlier_threshold_ms: number | null;
+  upper_outlier_threshold_ms: number | null;
   error_rate: number;
 };
 

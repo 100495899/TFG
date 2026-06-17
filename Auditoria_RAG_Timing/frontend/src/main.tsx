@@ -9,10 +9,12 @@ import { DashboardPage } from "./features/audits/DashboardPage";
 import { TargetsPage } from "./features/targets/TargetsPage";
 import { DatasetsPage } from "./features/datasets/DatasetsPage";
 import { NewAuditPage } from "./features/audits/NewAuditPage";
-import { ResultsPage } from "./features/audits/ResultsPage";
 import { api } from "./api/client";
 
 const queryClient = new QueryClient();
+const ResultsPage = React.lazy(() =>
+  import("./features/audits/ResultsPage").then((module) => ({ default: module.ResultsPage }))
+);
 
 function Protected({ children }: { children: React.ReactNode }) {
   const session = useQuery({
@@ -45,7 +47,14 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
             <Route path="datasets" element={<DatasetsPage />} />
             <Route path="audits/new" element={<NewAuditPage />} />
             <Route path="audits/running/:id" element={<Navigate to="/dashboard" replace />} />
-            <Route path="audits/results/:id" element={<ResultsPage />} />
+            <Route
+              path="audits/results/:id"
+              element={
+                <React.Suspense fallback={<div className="grid min-h-64 place-items-center text-sm text-slate-500">Loading report...</div>}>
+                  <ResultsPage />
+                </React.Suspense>
+              }
+            />
           </Route>
         </Routes>
       </BrowserRouter>

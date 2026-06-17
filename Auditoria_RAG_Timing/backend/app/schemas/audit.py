@@ -102,7 +102,8 @@ class GroupStats(BaseModel):
     p95_ms: float | None
     min_ms: float | None
     max_ms: float | None
-    p99_threshold_ms: float | None
+    lower_outlier_threshold_ms: float | None
+    upper_outlier_threshold_ms: float | None
     error_rate: float
 
 

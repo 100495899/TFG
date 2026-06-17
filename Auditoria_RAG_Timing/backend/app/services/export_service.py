@@ -38,7 +38,7 @@ async def export_results_csv(session: AsyncSession, session_id: uuid.UUID) -> st
         "is_error",
         "error_type",
         "error_message",
-        "is_p99_outlier",
+        "is_extreme_outlier",
         "timestamp",
     ])
     for row in rows:
@@ -95,7 +95,8 @@ async def export_summary_csv(session: AsyncSession, session_id: uuid.UUID) -> st
         "p95_ttfb_ms",
         "min_ttfb_ms",
         "max_ttfb_ms",
-        "p99_filter_threshold_ms",
+        "lower_outlier_threshold_ms",
+        "upper_outlier_threshold_ms",
         "error_rate",
     ])
     for group in summary.by_frequency_length:
@@ -119,7 +120,8 @@ async def export_summary_csv(session: AsyncSession, session_id: uuid.UUID) -> st
             group.p95_ms,
             group.min_ms,
             group.max_ms,
-            group.p99_threshold_ms,
+            group.lower_outlier_threshold_ms,
+            group.upper_outlier_threshold_ms,
             group.error_rate,
         ])
     return output.getvalue()
