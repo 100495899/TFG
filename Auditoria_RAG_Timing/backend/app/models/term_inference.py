@@ -52,7 +52,6 @@ class TermInferenceSession(Base):
     initial_probes_per_term: Mapped[int] = mapped_column(Integer, default=6)
     additional_probes_per_round: Mapped[int] = mapped_column(Integer, default=4)
     max_probes_per_term: Mapped[int] = mapped_column(Integer, default=30)
-    confidence_level: Mapped[float] = mapped_column(Float, default=0.95)
     calibration_health_controls: Mapped[int] = mapped_column(Integer, default=5)
     warning_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -76,7 +75,7 @@ class TermInferenceResult(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     session_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("term_inference_sessions.id", ondelete="CASCADE"), index=True)
-    term: Mapped[str] = mapped_column(String(120), index=True)
+    term: Mapped[str] = mapped_column(String(80), index=True)
     is_control: Mapped[bool] = mapped_column(Boolean, default=False)
     classification: Mapped[str | None] = mapped_column(String(30), nullable=True)
     observed_mean_ttfb_ms: Mapped[float | None] = mapped_column(Float, nullable=True)

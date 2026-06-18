@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
-from app.api.v1 import audits, auth, datasets, targets
+from app.api.v1 import audits, auth, datasets, targets, term_inference
 from app.core.config import settings
 from app.core.security import hash_password
 from app.db.session import AsyncSessionLocal
@@ -45,3 +45,4 @@ app.include_router(auth.router, prefix=settings.api_v1_prefix)
 app.include_router(targets.router, prefix=settings.api_v1_prefix)
 app.include_router(datasets.router, prefix=settings.api_v1_prefix)
 app.include_router(audits.router, prefix=settings.api_v1_prefix)
+app.include_router(term_inference.router, prefix=settings.api_v1_prefix)
