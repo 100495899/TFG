@@ -53,7 +53,8 @@ export function ResultsPage() {
   const results = useQuery({
     queryKey: ["audit-results", id, page, filters],
     queryFn: () => api.auditResults(id!, page, filters),
-    enabled: Boolean(id)
+    enabled: Boolean(id),
+    placeholderData: (previousData) => previousData
   });
   const summary = useQuery({
     queryKey: ["audit-summary", id],
@@ -82,7 +83,7 @@ export function ResultsPage() {
     URL.revokeObjectURL(url);
   }
 
-  if (summary.isLoading || results.isLoading) {
+  if (summary.isLoading || (results.isLoading && !results.data)) {
     return <div className="grid min-h-64 place-items-center text-sm text-slate-500">Building audit report...</div>;
   }
   if (summary.error || results.error || !report) {
@@ -265,6 +266,7 @@ export function ResultsPage() {
           <div>
             <h2 className="font-semibold">Raw requests</h2>
             <p className="mt-1 text-xs text-slate-500">Unmodified measurements retained for traceability and future classification.</p>
+            {results.isFetching && <p className="mt-1 text-xs text-slate-500">Updating filters...</p>}
           </div>
           <div className="grid w-full gap-2 sm:grid-cols-2 lg:flex lg:w-auto">
             <Select value={filters.frequency ?? ""} onChange={(event) => setFilter("frequency", event.target.value)}>
@@ -280,7 +282,7 @@ export function ResultsPage() {
               <option value="false">success</option>
               <option value="true">error</option>
             </Select>
-            <Input className="lg:w-28" value={filters.status_code ?? ""} onChange={(event) => setFilter("status_code", event.target.value)} placeholder="HTTP" />
+            <Input className="lg:w-32" value={filters.status_code ?? ""} onChange={(event) => setFilter("status_code", event.target.value)} placeholder="HTTP status" />
           </div>
         </div>
         <div className="mt-3 overflow-x-auto">

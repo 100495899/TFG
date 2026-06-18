@@ -15,7 +15,7 @@ export function AppLayout() {
   const queryClient = useQueryClient();
   return (
     <div className="min-h-screen grid grid-cols-[240px_1fr]">
-      <aside className="bg-white border-r border-slate-200 p-4 flex flex-col">
+      <aside className="sticky top-0 h-screen bg-white border-r border-slate-200 p-4 flex flex-col">
         <div className="font-semibold text-lg mb-6">RAG Timing Audit</div>
         <nav className="space-y-1 flex-1">
           {nav.map((item) => {
@@ -46,7 +46,7 @@ export function AppLayout() {
           Logout
         </button>
       </aside>
-      <main className="p-6 overflow-auto">
+      <main className="min-w-0 p-6">
         <Outlet />
       </main>
     </div>

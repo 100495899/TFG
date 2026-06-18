@@ -5,7 +5,7 @@ import type { EChartsOption } from "echarts";
 import { useParams } from "react-router-dom";
 import { api, TermInferenceResult } from "../../api/client";
 import { EChart } from "../../components/EChart";
-import { Button, Card } from "../../components/ui";
+import { Button, Card, Input, Select } from "../../components/ui";
 
 const CLASS_STYLES: Record<string, string> = {
   likely_present: "bg-green-100 text-green-800",
@@ -240,6 +240,13 @@ function DecisionConvergenceChart({
 export function TermInferenceResultsPage() {
   const { id } = useParams();
   const [fromZero, setFromZero] = useState(false);
+  const [timelinePage, setTimelinePage] = useState(1);
+  const [timelineFilters, setTimelineFilters] = useState({
+    type: "",
+    term: "",
+    round: "",
+    outcome: ""
+  });
   const report = useQuery({
     queryKey: ["term-inference-results", id],
     queryFn: () => api.termInferenceResults(id!),
@@ -271,6 +278,23 @@ export function TermInferenceResultsPage() {
   const data = report.data;
   const termResults = data.results.filter((result) => !result.is_control);
   const resultById = new Map(data.results.map((result) => [result.id, result]));
+  const timelinePageSize = 50;
+  const filteredMeasurements = data.measurements.filter((measurement) => {
+    const result = resultById.get(measurement.result_id);
+    if (timelineFilters.type === "term" && result?.is_control) return false;
+    if (timelineFilters.type === "control" && !result?.is_control) return false;
+    if (timelineFilters.term && !(result?.term ?? "").toLowerCase().includes(timelineFilters.term.toLowerCase())) return false;
+    if (timelineFilters.round && String(measurement.round_number) !== timelineFilters.round) return false;
+    if (timelineFilters.outcome === "success" && measurement.is_error) return false;
+    if (timelineFilters.outcome === "error" && !measurement.is_error) return false;
+    return true;
+  });
+  const timelinePageCount = Math.max(Math.ceil(filteredMeasurements.length / timelinePageSize), 1);
+  const visibleMeasurements = filteredMeasurements.slice((timelinePage - 1) * timelinePageSize, timelinePage * timelinePageSize);
+  function setTimelineFilter(key: keyof typeof timelineFilters, value: string) {
+    setTimelinePage(1);
+    setTimelineFilters((current) => ({ ...current, [key]: value }));
+  }
   const present = termResults.filter((result) => result.classification === "likely_present").length;
   const absent = termResults.filter((result) => result.classification === "likely_absent").length;
   const inconclusive = termResults.filter((result) => result.classification === "inconclusive").length;
@@ -370,10 +394,28 @@ export function TermInferenceResultsPage() {
       </Card>
 
       <Card>
-        <h2 className="font-semibold">Probe timeline</h2>
-        <p className="mt-1 text-xs text-slate-500">
-          Chronological sequence of term probes and interleaved negative controls stored during this inference.
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-semibold">Probe timeline</h2>
+            <p className="mt-1 text-xs text-slate-500">
+              Chronological sequence of term probes and interleaved negative controls stored during this inference.
+            </p>
+          </div>
+          <div className="grid w-full gap-2 sm:grid-cols-2 lg:flex lg:w-auto">
+            <Select value={timelineFilters.type} onChange={(event) => setTimelineFilter("type", event.target.value)}>
+              <option value="">All types</option>
+              <option value="term">Terms</option>
+              <option value="control">Controls</option>
+            </Select>
+            <Input className="lg:w-40" value={timelineFilters.term} onChange={(event) => setTimelineFilter("term", event.target.value)} placeholder="Term" />
+            <Input className="lg:w-24" value={timelineFilters.round} onChange={(event) => setTimelineFilter("round", event.target.value)} placeholder="Round" />
+            <Select value={timelineFilters.outcome} onChange={(event) => setTimelineFilter("outcome", event.target.value)}>
+              <option value="">All outcomes</option>
+              <option value="success">Success</option>
+              <option value="error">Error</option>
+            </Select>
+          </div>
+        </div>
         <div className="mt-3 overflow-x-auto">
           <table className="w-full min-w-[1120px] text-sm">
             <thead>
@@ -390,7 +432,7 @@ export function TermInferenceResultsPage() {
               </tr>
             </thead>
             <tbody>
-              {data.measurements.map((measurement) => {
+              {visibleMeasurements.map((measurement) => {
                 const result = resultById.get(measurement.result_id);
                 return (
                   <tr key={measurement.id} className="border-b border-slate-100">
@@ -408,6 +450,13 @@ export function TermInferenceResultsPage() {
               })}
             </tbody>
           </table>
+        </div>
+        <div className="mt-3 flex items-center justify-between">
+          <Button variant="secondary" disabled={timelinePage <= 1} onClick={() => setTimelinePage((current) => current - 1)}>Previous</Button>
+          <span className="text-sm text-slate-500">
+            Page {timelinePage} of {timelinePageCount} · {filteredMeasurements.length} probes
+          </span>
+          <Button variant="secondary" disabled={timelinePage >= timelinePageCount} onClick={() => setTimelinePage((current) => current + 1)}>Next</Button>
         </div>
       </Card>
     </div>
