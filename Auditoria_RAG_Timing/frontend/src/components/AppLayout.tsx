@@ -1,14 +1,13 @@
-import { Activity, Database, LogOut, PlayCircle, Search, Server } from "lucide-react";
+import { Activity, Database, LogOut, Search, Server } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 
 const nav = [
-  { to: "/dashboard", label: "Dashboard", icon: Activity },
+  { to: "/audits", label: "Audits", icon: Activity },
+  { to: "/term-inference", label: "Term Inference", icon: Search },
   { to: "/targets", label: "Targets", icon: Server },
-  { to: "/datasets", label: "Datasets", icon: Database },
-  { to: "/audits/new", label: "New Audit", icon: PlayCircle },
-  { to: "/term-inference", label: "Term Inference", icon: Search }
+  { to: "/datasets", label: "Datasets", icon: Database }
 ];
 
 export function AppLayout() {

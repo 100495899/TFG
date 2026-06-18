@@ -46,8 +46,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
               </Protected>
             }
           >
-            <Route index element={<Navigate to="/dashboard" replace />} />
-            <Route path="dashboard" element={<DashboardPage />} />
+            <Route index element={<Navigate to="/audits" replace />} />
+            <Route path="dashboard" element={<Navigate to="/audits" replace />} />
+            <Route path="audits" element={<DashboardPage />} />
             <Route path="targets" element={<TargetsPage />} />
             <Route path="datasets" element={<DatasetsPage />} />
             <Route path="audits/new" element={<NewAuditPage />} />

@@ -27,7 +27,7 @@ export function DashboardPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Dashboard</h1>
+        <h1 className="text-2xl font-semibold">Audits</h1>
         <Link to="/audits/new"><Button>New Audit</Button></Link>
       </div>
       <div className="grid grid-cols-4 gap-4">

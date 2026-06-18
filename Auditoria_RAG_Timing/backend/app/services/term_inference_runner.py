@@ -66,7 +66,7 @@ async def run_term_inference(session: AsyncSession, session_id: uuid.UUID) -> No
         async with create_http_client(target) as client:
             if controls:
                 control_batch = build_probe_batch(controls, probe_indexes, inference.initial_probes_per_term, rng)
-                request_index = await _execute_batch(
+                request_index, aborted = await _execute_batch(
                     session,
                     inference,
                     results,
@@ -76,6 +76,8 @@ async def run_term_inference(session: AsyncSession, session_id: uuid.UUID) -> No
                     request_index,
                     round_number=0,
                 )
+                if aborted:
+                    return
                 await _update_result_stats(session, results, controls, profile, final=True)
                 await _update_health_warning(inference, results, controls)
                 await session.commit()
@@ -99,7 +101,7 @@ async def run_term_inference(session: AsyncSession, session_id: uuid.UUID) -> No
                 if not batch_terms:
                     break
                 batch = build_probe_batch(batch_terms, probe_indexes, count, rng)
-                request_index = await _execute_batch(
+                request_index, aborted = await _execute_batch(
                     session,
                     inference,
                     results,
@@ -109,6 +111,8 @@ async def run_term_inference(session: AsyncSession, session_id: uuid.UUID) -> No
                     request_index,
                     round_number=round_number,
                 )
+                if aborted:
+                    return
                 await _update_result_stats(session, results, batch_terms, profile, final=False)
                 active_terms = [
                     term
@@ -120,6 +124,12 @@ async def run_term_inference(session: AsyncSession, session_id: uuid.UUID) -> No
                 await session.commit()
 
             await _finalize_remaining(session, results, terms, profile)
+        await session.refresh(inference)
+        if inference.status == "ABORT_REQUESTED":
+            inference.status = "ABORTED"
+            inference.completed_at = datetime.now(timezone.utc)
+            await session.commit()
+            return
         inference.status = "COMPLETED"
         inference.completed_at = datetime.now(timezone.utc)
         await session.commit()
@@ -169,8 +179,15 @@ async def _execute_batch(
     batch: list[tuple[str, str]],
     request_index: int,
     round_number: int,
-) -> int:
+) -> tuple[int, bool]:
     for term, query_text in batch:
+        await session.refresh(inference)
+        if inference.status == "ABORT_REQUESTED":
+            inference.status = "ABORTED"
+            inference.completed_at = datetime.now(timezone.utc)
+            await session.commit()
+            return request_index, True
+
         request_index += 1
         measurement = await measure_target(client, target, query_text)
         session.add(
@@ -192,7 +209,7 @@ async def _execute_batch(
         inference.progress_current += 1
         if request_index % 10 == 0:
             await session.commit()
-    return request_index
+    return request_index, False
 
 
 async def _update_result_stats(
