@@ -165,15 +165,25 @@ def profile_from_summary_csv(content: bytes, filename: str) -> CalibrationProfil
     return profile_from_summary_groups(list(reader), filename)
 
 
-def build_probe_batch(active_terms: list[str], probe_indexes: dict[str, int], count_per_term: int, rng: random.Random) -> list[tuple[str, str]]:
+def build_probe_batch(
+    active_terms: list[str],
+    probe_indexes: dict[str, int],
+    count_per_term: int,
+    rng: random.Random,
+    max_probes_per_term: int | None = None,
+    negative_controls: list[str] | None = None,
+) -> list[tuple[str, str]]:
     batch: list[tuple[str, str]] = []
     for term in active_terms:
         start = probe_indexes.get(term, 0)
-        for offset in range(count_per_term):
+        count = count_per_term
+        if max_probes_per_term is not None:
+            count = max(0, min(count_per_term, max_probes_per_term - start))
+        for offset in range(count):
             probe_index = start + offset
             template = PROBE_TEMPLATES[probe_index % len(PROBE_TEMPLATES)]
             batch.append((term, template.format(term=term)))
-        probe_indexes[term] = start + count_per_term
+        probe_indexes[term] = start + count
     rng.shuffle(batch)
 
     remaining = batch.copy()
@@ -184,7 +194,27 @@ def build_probe_batch(active_terms: list[str], probe_indexes: dict[str, int], co
         item = remaining.pop(index)
         ordered.append(item)
         last_term = item[0]
-    return ordered
+
+    if not ordered or not negative_controls:
+        return ordered
+
+    control_index = 0
+    since_last_control = 0
+    interval = max(1, len(active_terms))
+    with_controls: list[tuple[str, str]] = []
+    for item in ordered:
+        with_controls.append(item)
+        since_last_control += 1
+        if since_last_control >= interval:
+            control = negative_controls[control_index % len(negative_controls)]
+            control_index += 1
+            probe_index = probe_indexes.get(control, 0)
+            template = PROBE_TEMPLATES[probe_index % len(PROBE_TEMPLATES)]
+            with_controls.append((control, template.format(term=control)))
+            probe_indexes[control] = probe_index + 1
+            since_last_control = 0
+
+    return with_controls
 
 
 def classify_term(values: list[float], profile: CalibrationProfile) -> tuple[str, float | None, float | None, float | None, str | None]:

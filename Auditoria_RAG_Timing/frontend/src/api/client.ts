@@ -179,10 +179,8 @@ export type TermInferenceSession = {
   progress_current: number;
   progress_total: number;
   random_seed: number;
-  initial_probes_per_term: number;
-  additional_probes_per_round: number;
+  probes_per_round: number;
   max_probes_per_term: number;
-  calibration_health_controls: number;
   warning_message: string | null;
   error_message: string | null;
   created_at: string;

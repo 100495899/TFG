@@ -20,6 +20,8 @@ from app.services.term_inference_service import (
     classify_term,
 )
 
+HEALTH_CONTROL_COUNT = 5
+
 
 async def run_term_inference_job(ctx, session_id: str) -> None:
     async with AsyncSessionLocal() as session:
@@ -46,7 +48,7 @@ async def run_term_inference(session: AsyncSession, session_id: uuid.UUID) -> No
 
     payload = inference.terms_payload
     terms = list(payload.get("terms", []))
-    controls = list(payload.get("negative_controls", []))[: inference.calibration_health_controls]
+    controls = list(payload.get("negative_controls", []))[:HEALTH_CONTROL_COUNT]
     all_terms = terms + controls
     profile = CalibrationProfile.from_dict(inference.calibration_profile)
     rng = random.Random(inference.random_seed)
@@ -54,7 +56,11 @@ async def run_term_inference(session: AsyncSession, session_id: uuid.UUID) -> No
     inference.status = "RUNNING"
     inference.started_at = datetime.now(timezone.utc)
     inference.progress_current = 0
-    inference.progress_total = len(terms) * inference.max_probes_per_term + len(controls) * inference.initial_probes_per_term
+    inference.progress_total = (
+        len(terms) * inference.max_probes_per_term
+        + len(controls) * inference.probes_per_round
+        + (inference.max_probes_per_term if terms and controls else 0)
+    )
     await session.commit()
 
     results = await _ensure_results(session, inference.id, terms, controls)
@@ -65,7 +71,7 @@ async def run_term_inference(session: AsyncSession, session_id: uuid.UUID) -> No
     try:
         async with create_http_client(target) as client:
             if controls:
-                control_batch = build_probe_batch(controls, probe_indexes, inference.initial_probes_per_term, rng)
+                control_batch = build_probe_batch(controls, probe_indexes, inference.probes_per_round, rng)
                 request_index, aborted = await _execute_batch(
                     session,
                     inference,
@@ -91,8 +97,6 @@ async def run_term_inference(session: AsyncSession, session_id: uuid.UUID) -> No
                     await session.commit()
                     return
 
-                count = inference.initial_probes_per_term if round_number == 1 else inference.additional_probes_per_round
-                count = max(1, count)
                 batch_terms = [
                     term
                     for term in active_terms
@@ -100,7 +104,14 @@ async def run_term_inference(session: AsyncSession, session_id: uuid.UUID) -> No
                 ]
                 if not batch_terms:
                     break
-                batch = build_probe_batch(batch_terms, probe_indexes, count, rng)
+                batch = build_probe_batch(
+                    batch_terms,
+                    probe_indexes,
+                    inference.probes_per_round,
+                    rng,
+                    inference.max_probes_per_term,
+                    controls,
+                )
                 request_index, aborted = await _execute_batch(
                     session,
                     inference,
@@ -114,6 +125,7 @@ async def run_term_inference(session: AsyncSession, session_id: uuid.UUID) -> No
                 if aborted:
                     return
                 await _update_result_stats(session, results, batch_terms, profile, final=False)
+                await _update_result_stats(session, results, controls, profile, final=True)
                 active_terms = [
                     term
                     for term in active_terms
@@ -124,12 +136,14 @@ async def run_term_inference(session: AsyncSession, session_id: uuid.UUID) -> No
                 await session.commit()
 
             await _finalize_remaining(session, results, terms, profile)
+            await _update_result_stats(session, results, controls, profile, final=True)
         await session.refresh(inference)
         if inference.status == "ABORT_REQUESTED":
             inference.status = "ABORTED"
             inference.completed_at = datetime.now(timezone.utc)
             await session.commit()
             return
+        inference.progress_total = inference.progress_current
         inference.status = "COMPLETED"
         inference.completed_at = datetime.now(timezone.utc)
         await session.commit()

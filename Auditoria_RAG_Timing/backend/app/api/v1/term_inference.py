@@ -37,6 +37,7 @@ from app.services.term_inference_service import (
 from app.workers.arq_worker import redis_settings_from_url
 
 router = APIRouter(prefix="/term-inference", tags=["term-inference"], dependencies=[Depends(get_current_user)])
+TERM_INFERENCE_HEALTH_CONTROLS = 5
 
 
 @router.get("", response_model=list[TermInferenceListItem])
@@ -95,12 +96,10 @@ async def start_term_inference(request: Request, session: AsyncSession = Depends
         calibration_profile=profile.to_dict(),
         terms_payload=terms_payload,
         random_seed=payload["random_seed"],
-        initial_probes_per_term=payload["initial_probes_per_term"],
-        additional_probes_per_round=payload["additional_probes_per_round"],
+        probes_per_round=payload["probes_per_round"],
         max_probes_per_term=payload["max_probes_per_term"],
-        calibration_health_controls=payload["calibration_health_controls"],
         progress_total=len(terms_payload["terms"]) * payload["max_probes_per_term"]
-        + min(len(terms_payload["negative_controls"]), payload["calibration_health_controls"]) * payload["initial_probes_per_term"],
+        + min(len(terms_payload["negative_controls"]), TERM_INFERENCE_HEALTH_CONTROLS) * payload["probes_per_round"],
     )
     session.add(inference)
     await session.commit()
@@ -263,18 +262,14 @@ async def _parse_start_request(request: Request) -> dict:
     else:
         raise HTTPException(status_code=422, detail="terms_payload is required")
     random_seed = form.get("random_seed")
-    initial_probes = form.get("initial_probes_per_term")
-    additional_probes = form.get("additional_probes_per_round")
+    probes_per_round = form.get("probes_per_round")
     max_probes = form.get("max_probes_per_term")
-    health_controls = form.get("calibration_health_controls")
     return {
         "target_id": uuid.UUID(str(form["target_id"])),
         "source_audit_id": uuid.UUID(str(source_audit_id)) if source_audit_id else None,
         "terms_payload": terms_payload,
         "random_seed": int(random_seed) if random_seed not in (None, "") else TermInferenceJsonStart.model_fields["random_seed"].default_factory(),
-        "initial_probes_per_term": int(initial_probes) if initial_probes not in (None, "") else TermInferenceJsonStart.model_fields["initial_probes_per_term"].default,
-        "additional_probes_per_round": int(additional_probes) if additional_probes not in (None, "") else TermInferenceJsonStart.model_fields["additional_probes_per_round"].default,
+        "probes_per_round": int(probes_per_round) if probes_per_round not in (None, "") else TermInferenceJsonStart.model_fields["probes_per_round"].default,
         "max_probes_per_term": int(max_probes) if max_probes not in (None, "") else TermInferenceJsonStart.model_fields["max_probes_per_term"].default,
-        "calibration_health_controls": int(health_controls) if health_controls not in (None, "") else TermInferenceJsonStart.model_fields["calibration_health_controls"].default,
         "summary_csv": summary_csv if isinstance(summary_csv, StarletteUploadFile) else None,
     }

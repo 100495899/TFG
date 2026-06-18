@@ -29,10 +29,8 @@ class TermInferenceSessionRead(BaseModel):
     progress_current: int
     progress_total: int
     random_seed: int
-    initial_probes_per_term: int
-    additional_probes_per_round: int
+    probes_per_round: int
     max_probes_per_term: int
-    calibration_health_controls: int
     warning_message: str | None
     error_message: str | None
     created_at: datetime
@@ -111,7 +109,5 @@ class TermInferenceJsonStart(BaseModel):
     source_audit_id: uuid.UUID
     terms_payload: TermsPayload
     random_seed: int = Field(default_factory=lambda: random.randint(1, 2_147_483_647), ge=1, le=2_147_483_647)
-    initial_probes_per_term: int = Field(default=6, ge=1, le=30)
-    additional_probes_per_round: int = Field(default=4, ge=1, le=30)
+    probes_per_round: int = Field(default=6, ge=1, le=30)
     max_probes_per_term: int = Field(default=30, ge=1, le=100)
-    calibration_health_controls: int = Field(default=5, ge=0, le=20)
