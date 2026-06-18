@@ -5,6 +5,7 @@ from arq.worker import func
 
 from app.core.config import settings
 from app.services.audit_runner import run_audit_job
+from app.services.term_inference_runner import run_term_inference_job
 
 
 def redis_settings_from_url(url: str) -> RedisSettings:
@@ -24,6 +25,11 @@ class WorkerSettings:
     functions = [
         func(
             run_audit_job,
+            timeout=settings.audit_job_timeout_seconds,
+            max_tries=1,
+        ),
+        func(
+            run_term_inference_job,
             timeout=settings.audit_job_timeout_seconds,
             max_tries=1,
         )

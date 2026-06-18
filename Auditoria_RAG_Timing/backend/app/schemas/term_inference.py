@@ -92,7 +92,6 @@ class TermInferenceMeasurementRead(BaseModel):
 
 
 class CalibrationProfileRead(BaseModel):
-    direction: Literal["lower_is_present", "higher_is_present"]
     high_mean_ms: float
     medium_mean_ms: float | None
     low_mean_ms: float
