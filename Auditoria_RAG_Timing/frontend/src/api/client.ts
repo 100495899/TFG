@@ -169,6 +169,70 @@ export type SummaryGroup = {
   error_rate: number;
 };
 
+export type TermInferenceSession = {
+  id: string;
+  target_id: string;
+  source_audit_id: string | null;
+  source_type: string;
+  source_label: string;
+  status: string;
+  progress_current: number;
+  progress_total: number;
+  random_seed: number;
+  initial_probes_per_term: number;
+  additional_probes_per_round: number;
+  max_probes_per_term: number;
+  calibration_health_controls: number;
+  warning_message: string | null;
+  error_message: string | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+};
+
+export type TermInferenceListItem = TermInferenceSession & {
+  target_name: string;
+  result_count: number;
+};
+
+export type TermInferenceResult = {
+  id: string;
+  term: string;
+  is_control: boolean;
+  classification: "likely_present" | "likely_absent" | "inconclusive" | null;
+  observed_mean_ttfb_ms: number | null;
+  observed_std_ttfb_ms: number | null;
+  valid_measurements: number;
+  total_measurements: number;
+  distance_to_threshold_ms: number | null;
+  closest_reference: "high" | "medium" | "low" | null;
+  error_count: number;
+};
+
+export type TermInferenceResults = {
+  session: TermInferenceSession;
+  profile: {
+    high_mean_ms: number;
+    medium_mean_ms: number | null;
+    low_mean_ms: number;
+    threshold_ms: number;
+    gray_zone_ms: number;
+  };
+  results: TermInferenceResult[];
+  measurements: Array<{
+    id: string;
+    result_id: string;
+    request_index: number;
+    round_number: number;
+    query_text: string;
+    ttfb_ms: number | null;
+    full_response_ms: number | null;
+    is_error: boolean;
+    error_type: string | null;
+    timestamp: string;
+  }>;
+};
+
 export type ResultFilters = {
   frequency?: string;
   length?: string;
@@ -274,5 +338,12 @@ export const api = {
   abortAudit: (id: string) => request(`/api/v1/audits/${id}/abort`, { method: "POST" }),
   deleteAudit: (id: string) => request(`/api/v1/audits/${id}`, { method: "DELETE" }),
   downloadAuditCsv: (id: string, type: "summary" | "raw") =>
-    requestBlob(`/api/v1/audits/${id}/${type === "summary" ? "export-summary.csv" : "export.csv"}`)
+    requestBlob(`/api/v1/audits/${id}/${type === "summary" ? "export-summary.csv" : "export.csv"}`),
+  termInferences: () => request<TermInferenceListItem[]>("/api/v1/term-inference"),
+  startTermInference: (form: FormData) =>
+    request<{ session_id: string }>("/api/v1/term-inference/start", { method: "POST", body: form }),
+  termInferenceResults: (id: string) => request<TermInferenceResults>(`/api/v1/term-inference/${id}/results`),
+  abortTermInference: (id: string) => request(`/api/v1/term-inference/${id}/abort`, { method: "POST" }),
+  deleteTermInference: (id: string) => request(`/api/v1/term-inference/${id}`, { method: "DELETE" }),
+  downloadTermInferenceCsv: (id: string) => requestBlob(`/api/v1/term-inference/${id}/export.csv`)
 };
