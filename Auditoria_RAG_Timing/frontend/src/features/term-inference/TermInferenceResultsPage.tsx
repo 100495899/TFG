@@ -122,6 +122,21 @@ function classifyMean(mean: number, profile: { threshold_ms: number; gray_zone_m
   return "inconclusive";
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function tooltipTermList(values: string[]) {
+  if (!values.length) return "-";
+  const visible = values.slice(0, 8).map(escapeHtml).join(", ");
+  return values.length > 8 ? `${visible}, +${values.length - 8} more` : visible;
+}
+
 function DecisionConvergenceChart({
   results,
   measurements,
@@ -145,24 +160,43 @@ function DecisionConvergenceChart({
     }
 
     const maxCount = Math.max(0, ...Array.from(measurementMap.values()).map((values) => values.length));
-    const points: Array<[number, number, number, number]> = [];
+    const points: Array<{
+      value: [number, number, number, number];
+      groups: Record<"likely_present" | "likely_absent" | "inconclusive", string[]>;
+      unstable: string[];
+    }> = [];
     for (let probeCount = 1; probeCount <= maxCount; probeCount += 1) {
       let evaluable = 0;
       let matching = 0;
+      const groups = {
+        likely_present: [] as string[],
+        likely_absent: [] as string[],
+        inconclusive: [] as string[]
+      };
+      const unstable: string[] = [];
       for (const result of terms) {
         const values = measurementMap.get(result.id) ?? [];
         if (values.length < probeCount || result.classification === null) continue;
         const mean = values.slice(0, probeCount).reduce((sum, value) => sum + value, 0) / probeCount;
         const partialClassification = classifyMean(mean, profile);
+        groups[partialClassification].push(result.term);
         evaluable += 1;
-        if (partialClassification === result.classification) matching += 1;
+        if (partialClassification === result.classification) {
+          matching += 1;
+        } else {
+          unstable.push(result.term);
+        }
       }
       if (evaluable > 0) {
-        points.push([probeCount, (matching / evaluable) * 100, matching, evaluable]);
+        points.push({
+          value: [probeCount, (matching / evaluable) * 100, matching, evaluable],
+          groups,
+          unstable
+        });
       }
     }
 
-    const yValues = points.map((point) => point[1]);
+    const yValues = points.map((point) => point.value[1]);
     const minY = yValues.length ? Math.min(...yValues) : 0;
     const maxY = yValues.length ? Math.max(...yValues) : 100;
     const yMin = fromZero ? 0 : Math.max(0, Math.floor(minY / 5) * 5 - 5);
@@ -175,10 +209,28 @@ function DecisionConvergenceChart({
       tooltip: {
         trigger: "axis",
         formatter: (params: unknown) => {
-          const item = Array.isArray(params) ? params[0] as { data: [number, number, number, number] } : null;
+          const item = Array.isArray(params)
+            ? params[0] as {
+              data: {
+                value: [number, number, number, number];
+                groups: Record<"likely_present" | "likely_absent" | "inconclusive", string[]>;
+                unstable: string[];
+              };
+            }
+            : null;
           if (!item) return "";
-          const [probeCount, agreement, matching, evaluable] = item.data;
-          return `<strong>${probeCount} probes per term</strong><br/>Agreement: ${agreement.toFixed(1)}%<br/>${matching}/${evaluable} terms match final decision`;
+          const [probeCount, agreement, matching, evaluable] = item.data.value;
+          const { groups, unstable } = item.data;
+          return [
+            `<strong>${probeCount} probes per term</strong>`,
+            `Stability: ${agreement.toFixed(1)}%`,
+            `${matching}/${evaluable} terms match final decision`,
+            "",
+            `<strong>likely_present</strong>: ${tooltipTermList(groups.likely_present)}`,
+            `<strong>likely_absent</strong>: ${tooltipTermList(groups.likely_absent)}`,
+            `<strong>inconclusive</strong>: ${tooltipTermList(groups.inconclusive)}`,
+            `<strong>still changing</strong>: ${tooltipTermList(unstable)}`
+          ].join("<br/>");
         }
       },
       grid: { left: 64, right: 28, top: 28, bottom: 54 },
