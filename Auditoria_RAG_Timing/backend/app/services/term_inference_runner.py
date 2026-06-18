@@ -3,7 +3,7 @@ import random
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import AsyncSessionLocal
@@ -21,6 +21,7 @@ from app.services.term_inference_service import (
 )
 
 HEALTH_CONTROL_COUNT = 5
+HEALTH_CHECK_TOTAL_PROBES = 5
 
 
 async def run_term_inference_job(ctx, session_id: str) -> None:
@@ -71,7 +72,13 @@ async def run_term_inference(session: AsyncSession, session_id: uuid.UUID) -> No
     try:
         async with create_http_client(target) as client:
             if controls:
-                control_batch = build_probe_batch(controls, probe_indexes, inference.probes_per_round, rng)
+                control_batch = build_probe_batch(
+                    controls,
+                    probe_indexes,
+                    HEALTH_CHECK_TOTAL_PROBES,
+                    rng,
+                    max_total_probes=HEALTH_CHECK_TOTAL_PROBES,
+                )
                 request_index, aborted = await _execute_batch(
                     session,
                     inference,
@@ -90,11 +97,8 @@ async def run_term_inference(session: AsyncSession, session_id: uuid.UUID) -> No
 
             round_number = 1
             while active_terms:
-                await session.refresh(inference)
-                if inference.status == "ABORT_REQUESTED":
-                    inference.status = "ABORTED"
-                    inference.completed_at = datetime.now(timezone.utc)
-                    await session.commit()
+                if await _abort_requested(session, inference.id):
+                    await _mark_aborted(session, inference)
                     return
 
                 batch_terms = [
@@ -124,7 +128,14 @@ async def run_term_inference(session: AsyncSession, session_id: uuid.UUID) -> No
                 )
                 if aborted:
                     return
-                await _update_result_stats(session, results, batch_terms, profile, final=False)
+                await _update_result_stats(
+                    session,
+                    results,
+                    batch_terms,
+                    profile,
+                    final=False,
+                    min_valid_measurements=inference.probes_per_round,
+                )
                 await _update_result_stats(session, results, controls, profile, final=True)
                 active_terms = [
                     term
@@ -137,13 +148,12 @@ async def run_term_inference(session: AsyncSession, session_id: uuid.UUID) -> No
 
             await _finalize_remaining(session, results, terms, profile)
             await _update_result_stats(session, results, controls, profile, final=True)
-        await session.refresh(inference)
-        if inference.status == "ABORT_REQUESTED":
-            inference.status = "ABORTED"
-            inference.completed_at = datetime.now(timezone.utc)
-            await session.commit()
+        if await _abort_requested(session, inference.id):
+            await _mark_aborted(session, inference)
             return
-        inference.progress_total = inference.progress_current
+        final_progress = await _measurement_count(session, inference.id)
+        inference.progress_current = final_progress
+        inference.progress_total = final_progress
         inference.status = "COMPLETED"
         inference.completed_at = datetime.now(timezone.utc)
         await session.commit()
@@ -195,11 +205,8 @@ async def _execute_batch(
     round_number: int,
 ) -> tuple[int, bool]:
     for term, query_text in batch:
-        await session.refresh(inference)
-        if inference.status == "ABORT_REQUESTED":
-            inference.status = "ABORTED"
-            inference.completed_at = datetime.now(timezone.utc)
-            await session.commit()
+        if await _abort_requested(session, inference.id):
+            await _mark_aborted(session, inference)
             return request_index, True
 
         request_index += 1
@@ -226,6 +233,33 @@ async def _execute_batch(
     return request_index, False
 
 
+async def _abort_requested(session: AsyncSession, inference_id: uuid.UUID) -> bool:
+    await session.flush()
+    status = await session.scalar(
+        select(TermInferenceSession.status).where(TermInferenceSession.id == inference_id)
+    )
+    return status == "ABORT_REQUESTED"
+
+
+async def _mark_aborted(session: AsyncSession, inference: TermInferenceSession) -> None:
+    final_progress = await _measurement_count(session, inference.id)
+    inference.progress_current = final_progress
+    inference.progress_total = final_progress
+    inference.status = "ABORTED"
+    inference.completed_at = datetime.now(timezone.utc)
+    await session.commit()
+
+
+async def _measurement_count(session: AsyncSession, inference_id: uuid.UUID) -> int:
+    await session.flush()
+    count = await session.scalar(
+        select(func.count(TermInferenceMeasurement.id))
+        .join(TermInferenceResult, TermInferenceResult.id == TermInferenceMeasurement.result_id)
+        .where(TermInferenceResult.session_id == inference_id)
+    )
+    return int(count or 0)
+
+
 async def _update_result_stats(
     session: AsyncSession,
     results: dict[str, TermInferenceResult],
@@ -233,6 +267,7 @@ async def _update_result_stats(
     profile: CalibrationProfile,
     *,
     final: bool,
+    min_valid_measurements: int = 1,
 ) -> None:
     for term in terms:
         result = results[term]
@@ -243,6 +278,8 @@ async def _update_result_stats(
         ).scalars().all()
         values = [float(item.ttfb_ms) for item in measurements if not item.is_error and item.ttfb_ms is not None]
         classification, mean, std, distance, closest = classify_term(values, profile)
+        if len(values) < min_valid_measurements and not final:
+            classification = "inconclusive"
         result.classification = classification if final or classification != "inconclusive" else "inconclusive"
         result.observed_mean_ttfb_ms = mean
         result.observed_std_ttfb_ms = std

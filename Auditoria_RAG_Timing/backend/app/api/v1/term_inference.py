@@ -38,27 +38,41 @@ from app.workers.arq_worker import redis_settings_from_url
 
 router = APIRouter(prefix="/term-inference", tags=["term-inference"], dependencies=[Depends(get_current_user)])
 TERM_INFERENCE_HEALTH_CONTROLS = 5
+TERM_INFERENCE_HEALTH_CHECK_TOTAL_PROBES = 5
+TERMINAL_STATUSES = {"COMPLETED", "FAILED", "ABORTED"}
 
 
 @router.get("", response_model=list[TermInferenceListItem])
 async def list_term_inferences(session: AsyncSession = Depends(get_session)) -> list[TermInferenceListItem]:
     rows = (
         await session.execute(
-            select(TermInferenceSession, Target.name, func.count(TermInferenceResult.id))
+            select(
+                TermInferenceSession,
+                Target.name,
+                func.count(func.distinct(TermInferenceResult.id)),
+                func.count(TermInferenceMeasurement.id),
+            )
             .join(Target, Target.id == TermInferenceSession.target_id)
             .outerjoin(TermInferenceResult, TermInferenceResult.session_id == TermInferenceSession.id)
+            .outerjoin(TermInferenceMeasurement, TermInferenceMeasurement.result_id == TermInferenceResult.id)
             .group_by(TermInferenceSession.id, Target.name)
             .order_by(TermInferenceSession.created_at.desc())
         )
     ).all()
-    return [
-        TermInferenceListItem(
-            **TermInferenceSessionRead.model_validate(inference).model_dump(),
-            target_name=target_name,
-            result_count=result_count or 0,
+    items: list[TermInferenceListItem] = []
+    for inference, target_name, result_count, measurement_count in rows:
+        data = TermInferenceSessionRead.model_validate(inference).model_dump()
+        if inference.status in TERMINAL_STATUSES:
+            data["progress_current"] = int(measurement_count or 0)
+            data["progress_total"] = int(measurement_count or 0)
+        items.append(
+            TermInferenceListItem(
+                **data,
+                target_name=target_name,
+                result_count=result_count or 0,
+            )
         )
-        for inference, target_name, result_count in rows
-    ]
+    return items
 
 
 @router.post("/start", response_model=TermInferenceStartResponse)
@@ -99,7 +113,8 @@ async def start_term_inference(request: Request, session: AsyncSession = Depends
         probes_per_round=payload["probes_per_round"],
         max_probes_per_term=payload["max_probes_per_term"],
         progress_total=len(terms_payload["terms"]) * payload["max_probes_per_term"]
-        + min(len(terms_payload["negative_controls"]), TERM_INFERENCE_HEALTH_CONTROLS) * payload["probes_per_round"],
+        + (TERM_INFERENCE_HEALTH_CHECK_TOTAL_PROBES if terms_payload["negative_controls"] else 0)
+        + (payload["max_probes_per_term"] if terms_payload["terms"] and terms_payload["negative_controls"] else 0),
     )
     session.add(inference)
     await session.commit()
@@ -126,11 +141,17 @@ async def get_term_inference_status(inference_id: uuid.UUID, session: AsyncSessi
     inference = await session.get(TermInferenceSession, inference_id)
     if not inference:
         raise HTTPException(status_code=404, detail="Term inference not found")
+    progress_current = inference.progress_current
+    progress_total = inference.progress_total
+    if inference.status in TERMINAL_STATUSES:
+        measurement_count = await _measurement_count(session, inference_id)
+        progress_current = measurement_count
+        progress_total = measurement_count
     return TermInferenceStatusRead(
         id=inference.id,
         status=inference.status,
-        progress_current=inference.progress_current,
-        progress_total=inference.progress_total,
+        progress_current=progress_current,
+        progress_total=progress_total,
         warning_message=inference.warning_message,
         error_message=inference.error_message,
     )
@@ -179,8 +200,16 @@ async def get_term_inference_results(inference_id: uuid.UUID, session: AsyncSess
             .order_by(TermInferenceMeasurement.request_index)
         )
     ).scalars().all()
+    session_read = TermInferenceSessionRead.model_validate(inference)
+    if inference.status in TERMINAL_STATUSES:
+        session_read = session_read.model_copy(
+            update={
+                "progress_current": len(measurements),
+                "progress_total": len(measurements),
+            }
+        )
     return TermInferenceResultsPage(
-        session=TermInferenceSessionRead.model_validate(inference),
+        session=session_read,
         profile=inference.calibration_profile,
         results=[TermInferenceResultRead.model_validate(result) for result in results],
         measurements=[TermInferenceMeasurementRead.model_validate(measurement) for measurement in measurements],
@@ -273,3 +302,12 @@ async def _parse_start_request(request: Request) -> dict:
         "max_probes_per_term": int(max_probes) if max_probes not in (None, "") else TermInferenceJsonStart.model_fields["max_probes_per_term"].default,
         "summary_csv": summary_csv if isinstance(summary_csv, StarletteUploadFile) else None,
     }
+
+
+async def _measurement_count(session: AsyncSession, inference_id: uuid.UUID) -> int:
+    count = await session.scalar(
+        select(func.count(TermInferenceMeasurement.id))
+        .join(TermInferenceResult, TermInferenceResult.id == TermInferenceMeasurement.result_id)
+        .where(TermInferenceResult.session_id == inference_id)
+    )
+    return int(count or 0)

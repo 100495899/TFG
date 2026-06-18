@@ -172,13 +172,18 @@ def build_probe_batch(
     rng: random.Random,
     max_probes_per_term: int | None = None,
     negative_controls: list[str] | None = None,
+    max_total_probes: int | None = None,
 ) -> list[tuple[str, str]]:
     batch: list[tuple[str, str]] = []
     for term in active_terms:
+        if max_total_probes is not None and len(batch) >= max_total_probes:
+            break
         start = probe_indexes.get(term, 0)
         count = count_per_term
         if max_probes_per_term is not None:
             count = max(0, min(count_per_term, max_probes_per_term - start))
+        if max_total_probes is not None:
+            count = min(count, max_total_probes - len(batch))
         for offset in range(count):
             probe_index = start + offset
             template = PROBE_TEMPLATES[probe_index % len(PROBE_TEMPLATES)]

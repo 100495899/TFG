@@ -225,6 +225,8 @@ export type TermInferenceResults = {
     query_text: string;
     ttfb_ms: number | null;
     full_response_ms: number | null;
+    status_code: number | null;
+    response_size_bytes: number | null;
     is_error: boolean;
     error_type: string | null;
     timestamp: string;
