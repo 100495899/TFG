@@ -5,6 +5,7 @@ import {
   BarChart,
   BoxplotChart,
   HeatmapChart,
+  LineChart,
   ScatterChart
 } from "echarts/charts";
 import {
@@ -21,6 +22,7 @@ echarts.use([
   BarChart,
   BoxplotChart,
   HeatmapChart,
+  LineChart,
   ScatterChart,
   DataZoomComponent,
   GridComponent,
