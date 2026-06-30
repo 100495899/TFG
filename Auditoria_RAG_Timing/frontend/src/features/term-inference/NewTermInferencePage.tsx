@@ -9,6 +9,19 @@ const DEFAULT_TERMS_JSON = JSON.stringify({
   negative_controls: ["zenthorium", "qrevanta"]
 }, null, 2);
 
+const DEFAULT_CUSTOM_QUERIES_JSON = JSON.stringify({
+  man: [
+    "the man of the day",
+    "a young man in the city",
+    "the old man and the sea"
+  ],
+  Tesla: [
+    "Tesla electric vehicle company",
+    "Nikola Tesla inventions",
+    "Tesla battery technology"
+  ]
+}, null, 2);
+
 export function NewTermInferencePage() {
   const targets = useQuery({ queryKey: ["targets"], queryFn: api.targets });
   const audits = useQuery({ queryKey: ["audits"], queryFn: api.audits });
@@ -17,6 +30,7 @@ export function NewTermInferencePage() {
   const [sourceMode, setSourceMode] = useState<"audit" | "csv">("audit");
   const [sourceAuditId, setSourceAuditId] = useState("");
   const [summaryCsv, setSummaryCsv] = useState<File | null>(null);
+  const [queryMode, setQueryMode] = useState<"terms" | "custom">("terms");
   const [termsJson, setTermsJson] = useState(DEFAULT_TERMS_JSON);
   const [probesPerRound, setProbesPerRound] = useState(6);
   const [maxProbes, setMaxProbes] = useState(30);
@@ -28,25 +42,55 @@ export function NewTermInferencePage() {
 
   const parsedPreview = useMemo(() => {
     try {
-      const parsed = JSON.parse(termsJson) as { terms?: string[]; negative_controls?: string[] };
+      const parsed = JSON.parse(termsJson) as { terms?: string[]; negative_controls?: string[]; custom_queries?: Record<string, string[]> } | Record<string, string[]>;
+      if (queryMode === "custom") {
+        const rawMap = "custom_queries" in parsed && parsed.custom_queries ? parsed.custom_queries : parsed as Record<string, string[]>;
+        const entries = Object.entries(rawMap).filter(([key]) => key !== "negative_controls");
+        return {
+          terms: entries.map(([term]) => term),
+          controls: Array.isArray((parsed as { negative_controls?: unknown }).negative_controls) ? (parsed as { negative_controls: string[] }).negative_controls : [],
+          customQueryCount: entries.reduce((total, [, queries]) => total + (Array.isArray(queries) ? queries.length : 0), 0)
+        };
+      }
+      const standardPayload = parsed as { terms?: string[]; negative_controls?: string[] };
       return {
-        terms: Array.isArray(parsed.terms) ? parsed.terms : [],
-        controls: Array.isArray(parsed.negative_controls) ? parsed.negative_controls : []
+        terms: Array.isArray(standardPayload.terms) ? standardPayload.terms : [],
+        controls: Array.isArray(standardPayload.negative_controls) ? standardPayload.negative_controls : [],
+        customQueryCount: 0
       };
     } catch {
       return null;
     }
-  }, [termsJson]);
+  }, [queryMode, termsJson]);
+
+  function changeQueryMode(nextMode: "terms" | "custom") {
+    setQueryMode(nextMode);
+    setTermsJson(nextMode === "terms" ? DEFAULT_TERMS_JSON : DEFAULT_CUSTOM_QUERIES_JSON);
+  }
+
+  function buildTermsPayload() {
+    const parsed = JSON.parse(termsJson) as { terms?: string[]; negative_controls?: string[]; custom_queries?: Record<string, string[]> } | Record<string, string[]>;
+    if (queryMode === "terms") return parsed;
+
+    const rawMap = "custom_queries" in parsed && parsed.custom_queries ? parsed.custom_queries : parsed as Record<string, string[]>;
+    const customQueries = Object.fromEntries(Object.entries(rawMap).filter(([key]) => key !== "negative_controls"));
+    return {
+      custom_queries: customQueries,
+      negative_controls: Array.isArray((parsed as { negative_controls?: unknown }).negative_controls)
+        ? (parsed as { negative_controls: string[] }).negative_controls
+        : []
+    };
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setError("");
     setIsLaunching(true);
     try {
-      JSON.parse(termsJson);
+      const termsPayload = buildTermsPayload();
       const form = new FormData();
       form.append("target_id", targetId);
-      form.append("terms_payload", termsJson);
+      form.append("terms_payload", JSON.stringify(termsPayload));
       form.append("probes_per_round", String(probesPerRound));
       form.append("max_probes_per_term", String(maxProbes));
       if (seed) form.append("random_seed", seed);
@@ -110,8 +154,31 @@ export function NewTermInferencePage() {
 
           <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
             <label className="space-y-1">
-              <span className="text-sm font-medium">Terms JSON</span>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <span className="text-sm font-medium">{queryMode === "terms" ? "Terms JSON" : "Custom queries JSON"}</span>
+                <div className="inline-flex rounded-md border border-slate-200 bg-white p-1 text-xs">
+                  <button
+                    type="button"
+                    className={`rounded px-3 py-1 ${queryMode === "terms" ? "bg-slate-950 text-white" : "text-slate-600"}`}
+                    onClick={() => changeQueryMode("terms")}
+                  >
+                    Terms
+                  </button>
+                  <button
+                    type="button"
+                    className={`rounded px-3 py-1 ${queryMode === "custom" ? "bg-slate-950 text-white" : "text-slate-600"}`}
+                    onClick={() => changeQueryMode("custom")}
+                  >
+                    Queries
+                  </button>
+                </div>
+              </div>
               <Textarea rows={13} value={termsJson} onChange={(event) => setTermsJson(event.target.value)} />
+              <span className="block text-xs text-slate-500">
+                {queryMode === "terms"
+                  ? "The system generates deterministic short probes for each term."
+                  : "Use a JSON object where each key is a term and each value is the list of exact queries to run."}
+              </span>
             </label>
             <div className="rounded-md border border-slate-200 p-4 text-sm">
               <div className="font-medium">Preview</div>
@@ -124,6 +191,13 @@ export function NewTermInferencePage() {
                     <div className="mt-1 text-2xl font-semibold">{parsedPreview.terms.length}</div>
                     <p className="mt-1 text-xs text-slate-500">{parsedPreview.terms.slice(0, 5).join(", ")}</p>
                   </div>
+                  {queryMode === "custom" && (
+                    <div>
+                      <div className="text-xs uppercase text-slate-500">Custom queries</div>
+                      <div className="mt-1 text-2xl font-semibold">{parsedPreview.customQueryCount}</div>
+                      <p className="mt-1 text-xs text-slate-500">Queries are shuffled and interleaved with controls during execution.</p>
+                    </div>
+                  )}
                   <div>
                     <div className="text-xs uppercase text-slate-500">Negative controls</div>
                     <div className="mt-1 text-2xl font-semibold">{parsedPreview.controls.length || "default"}</div>

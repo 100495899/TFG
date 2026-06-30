@@ -20,6 +20,12 @@ PROBE_TEMPLATES = [
     "Context for {term}.",
     "Meaning of {term}.",
     "About {term}.",
+    "Describe {term}.",
+    "Details about {term}.",
+    "Definition of {term}.",
+    "Tell me about {term}.",
+    "Give context on {term}.",
+    "Summarize the {term}.",
 ]
 
 DEFAULT_NEGATIVE_CONTROLS = ["zenthorium", "qrevanta", "malvexor", "norithium", "veltraxis"]
@@ -62,10 +68,11 @@ class CalibrationProfile:
         )
 
 
-def normalize_terms_payload(payload: TermsPayload) -> dict[str, list[str]]:
-    terms = _dedupe_and_validate_terms(payload.terms, "terms")
+def normalize_terms_payload(payload: TermsPayload) -> dict[str, Any]:
+    custom_queries = _validate_custom_queries(payload.custom_queries)
+    terms = list(custom_queries) if custom_queries else _dedupe_and_validate_terms(payload.terms, "terms")
     controls = _dedupe_and_validate_terms(payload.negative_controls, "negative_controls") if payload.negative_controls else DEFAULT_NEGATIVE_CONTROLS
-    return {"terms": terms, "negative_controls": controls}
+    return {"terms": terms, "negative_controls": controls, "custom_queries": custom_queries}
 
 
 def _dedupe_and_validate_terms(values: list[str], field_name: str) -> list[str]:
@@ -83,6 +90,44 @@ def _dedupe_and_validate_terms(values: list[str], field_name: str) -> list[str]:
             result.append(term)
     if not result:
         raise HTTPException(status_code=422, detail=f"{field_name} must contain at least one term")
+    return result
+
+
+def _validate_custom_queries(raw_queries: dict[str, list[str]]) -> dict[str, list[str]]:
+    if not raw_queries:
+        return {}
+
+    result: dict[str, list[str]] = {}
+    seen_terms: set[str] = set()
+    for raw_term, queries in raw_queries.items():
+        term = raw_term.strip()
+        key = term.casefold()
+        if not term:
+            raise HTTPException(status_code=422, detail="custom_queries cannot contain empty terms")
+        if len(term) > 80:
+            raise HTTPException(status_code=422, detail="custom_queries terms cannot exceed 80 characters")
+        if key in seen_terms:
+            continue
+        if not isinstance(queries, list) or not queries:
+            raise HTTPException(status_code=422, detail=f"custom_queries for {term} must contain at least one query")
+
+        cleaned_queries: list[str] = []
+        seen_queries: set[str] = set()
+        for raw_query in queries:
+            query = raw_query.strip()
+            query_key = query.casefold()
+            if not query:
+                raise HTTPException(status_code=422, detail=f"custom_queries for {term} cannot contain empty queries")
+            if query_key not in seen_queries:
+                seen_queries.add(query_key)
+                cleaned_queries.append(query)
+        if not cleaned_queries:
+            raise HTTPException(status_code=422, detail=f"custom_queries for {term} must contain at least one query")
+        seen_terms.add(key)
+        result[term] = cleaned_queries
+
+    if not result:
+        raise HTTPException(status_code=422, detail="custom_queries must contain at least one term")
     return result
 
 
@@ -173,6 +218,7 @@ def build_probe_batch(
     max_probes_per_term: int | None = None,
     negative_controls: list[str] | None = None,
     max_total_probes: int | None = None,
+    custom_queries: dict[str, list[str]] | None = None,
 ) -> list[tuple[str, str]]:
     batch: list[tuple[str, str]] = []
     for term in active_terms:
@@ -186,8 +232,13 @@ def build_probe_batch(
             count = min(count, max_total_probes - len(batch))
         for offset in range(count):
             probe_index = start + offset
-            template = PROBE_TEMPLATES[probe_index % len(PROBE_TEMPLATES)]
-            batch.append((term, template.format(term=term)))
+            if custom_queries and term in custom_queries:
+                queries = custom_queries[term]
+                query_text = queries[probe_index % len(queries)]
+            else:
+                template = PROBE_TEMPLATES[probe_index % len(PROBE_TEMPLATES)]
+                query_text = template.format(term=term)
+            batch.append((term, query_text))
         probe_indexes[term] = start + count
     rng.shuffle(batch)
 

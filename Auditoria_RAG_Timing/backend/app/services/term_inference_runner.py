@@ -50,6 +50,7 @@ async def run_term_inference(session: AsyncSession, session_id: uuid.UUID) -> No
     payload = inference.terms_payload
     terms = list(payload.get("terms", []))
     controls = list(payload.get("negative_controls", []))[:HEALTH_CONTROL_COUNT]
+    custom_queries = payload.get("custom_queries", {})
     all_terms = terms + controls
     profile = CalibrationProfile.from_dict(inference.calibration_profile)
     rng = random.Random(inference.random_seed)
@@ -115,6 +116,7 @@ async def run_term_inference(session: AsyncSession, session_id: uuid.UUID) -> No
                     rng,
                     inference.max_probes_per_term,
                     controls,
+                    custom_queries=custom_queries,
                 )
                 request_index, aborted = await _execute_batch(
                     session,

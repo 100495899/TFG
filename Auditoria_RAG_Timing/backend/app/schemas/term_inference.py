@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 Classification = Literal["likely_present", "likely_absent", "inconclusive"]
@@ -11,8 +11,15 @@ ClosestReference = Literal["high", "medium", "low"]
 
 
 class TermsPayload(BaseModel):
-    terms: list[str] = Field(min_length=1, max_length=100)
+    terms: list[str] = Field(default_factory=list, max_length=100)
+    custom_queries: dict[str, list[str]] = Field(default_factory=dict, max_length=100)
     negative_controls: list[str] = Field(default_factory=list, max_length=20)
+
+    @model_validator(mode="after")
+    def require_terms_or_custom_queries(self) -> "TermsPayload":
+        if not self.terms and not self.custom_queries:
+            raise ValueError("terms or custom_queries is required")
+        return self
 
 
 class TermInferenceStartResponse(BaseModel):
