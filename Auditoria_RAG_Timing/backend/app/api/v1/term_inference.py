@@ -276,7 +276,12 @@ async def _parse_start_request(request: Request) -> dict:
     if "application/json" in content_type:
         body = TermInferenceJsonStart.model_validate(await request.json())
         return {
-            **body.model_dump(),
+            "target_id": body.target_id,
+            "source_audit_id": body.source_audit_id,
+            "terms_payload": body.terms_payload,
+            "random_seed": body.random_seed,
+            "probes_per_round": body.probes_per_round,
+            "max_probes_per_term": body.max_probes_per_term,
             "summary_csv": None,
         }
 
