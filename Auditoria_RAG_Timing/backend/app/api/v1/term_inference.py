@@ -5,6 +5,7 @@ import uuid
 
 from arq import create_pool
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import UploadFile as StarletteUploadFile
@@ -280,6 +281,9 @@ async def _parse_start_request(request: Request) -> dict:
         }
 
     form = await request.form()
+    target_id_raw = form.get("target_id")
+    if not target_id_raw:
+        raise HTTPException(status_code=422, detail="target_id is required")
     source_audit_id = form.get("source_audit_id")
     terms_payload_raw = form.get("terms_payload")
     summary_csv = form.get("summary_csv")
@@ -288,18 +292,34 @@ async def _parse_start_request(request: Request) -> dict:
             terms_payload = TermsPayload.model_validate(json.loads(terms_payload_raw))
         except json.JSONDecodeError as exc:
             raise HTTPException(status_code=422, detail="terms_payload must contain valid JSON") from exc
+        except ValidationError as exc:
+            raise HTTPException(status_code=422, detail=exc.errors(include_url=False)) from exc
     else:
         raise HTTPException(status_code=422, detail="terms_payload is required")
     random_seed = form.get("random_seed")
     probes_per_round = form.get("probes_per_round")
     max_probes = form.get("max_probes_per_term")
+    try:
+        target_id = uuid.UUID(str(target_id_raw))
+        parsed_source_audit_id = uuid.UUID(str(source_audit_id)) if source_audit_id else None
+        parsed_random_seed = int(random_seed) if random_seed not in (None, "") else TermInferenceJsonStart.model_fields["random_seed"].default_factory()
+        parsed_probes_per_round = int(probes_per_round) if probes_per_round not in (None, "") else TermInferenceJsonStart.model_fields["probes_per_round"].default
+        parsed_max_probes = int(max_probes) if max_probes not in (None, "") else TermInferenceJsonStart.model_fields["max_probes_per_term"].default
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="Term inference form contains invalid identifiers or numeric values") from exc
+    if not 1 <= parsed_random_seed <= 2_147_483_647:
+        raise HTTPException(status_code=422, detail="random_seed must be between 1 and 2147483647")
+    if not 1 <= parsed_probes_per_round <= 30:
+        raise HTTPException(status_code=422, detail="probes_per_round must be between 1 and 30")
+    if not 1 <= parsed_max_probes <= 100:
+        raise HTTPException(status_code=422, detail="max_probes_per_term must be between 1 and 100")
     return {
-        "target_id": uuid.UUID(str(form["target_id"])),
-        "source_audit_id": uuid.UUID(str(source_audit_id)) if source_audit_id else None,
+        "target_id": target_id,
+        "source_audit_id": parsed_source_audit_id,
         "terms_payload": terms_payload,
-        "random_seed": int(random_seed) if random_seed not in (None, "") else TermInferenceJsonStart.model_fields["random_seed"].default_factory(),
-        "probes_per_round": int(probes_per_round) if probes_per_round not in (None, "") else TermInferenceJsonStart.model_fields["probes_per_round"].default,
-        "max_probes_per_term": int(max_probes) if max_probes not in (None, "") else TermInferenceJsonStart.model_fields["max_probes_per_term"].default,
+        "random_seed": parsed_random_seed,
+        "probes_per_round": parsed_probes_per_round,
+        "max_probes_per_term": parsed_max_probes,
         "summary_csv": summary_csv if isinstance(summary_csv, StarletteUploadFile) else None,
     }
 
