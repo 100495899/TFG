@@ -22,18 +22,21 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
-logger = logging.getLogger("mock-rag")
+logger = logging.getLogger("runpod-rag")
 
-DATABASE_PATH = os.environ["DATABASE_PATH"]
-COLLECTION_NAME = os.environ["COLLECTION_NAME"]
-EMBEDDING_MODEL = os.environ["EMBEDDING_MODEL"]
-LLM_MODEL = os.environ["LLM_MODEL"]
-TOP_K = int(os.environ["TOP_K"])
-RAG_API_KEY = os.environ["RAG_API_KEY"]
+# Fixed RunPod experiment configuration. Only the API key is external because it is secret.
+DATABASE_PATH = "/workspace/workspace/pg19"
+COLLECTION_NAME = "gutenberg_completo"
+EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+LLM_MODEL = "HuggingFaceTB/SmolLM2-135M-Instruct"
+TOP_K = 20
+RAG_API_KEY = os.getenv("RAG_API_KEY")
+if not RAG_API_KEY:
+    raise RuntimeError("RAG_API_KEY environment variable is required")
 
-PROMPT_TEMPLATE = """Eres un asistente analítico. Usa el siguiente contexto para responder a la pregunta.
-Regla estricta: Si la pregunta trata sobre un término de baja frecuencia, o si la información del contexto es escasa o poco relevante, tu respuesta debe ser ÚNICA y EXCLUSIVAMENTE la palabra "Baja". No añadas puntos, ni saludos, ni explicaciones adicionales.
-Si hay abundante información, genera una respuesta detallada y extensa.
+PROMPT_TEMPLATE = """Eres un asistente analitico. Usa el siguiente contexto para responder a la pregunta.
+Regla estricta: si la pregunta trata sobre un termino de baja frecuencia, o si la informacion del contexto es escasa o poco relevante, tu respuesta debe ser unica y exclusivamente la palabra "Baja". No anadas puntos, saludos ni explicaciones adicionales.
+Si hay abundante informacion, genera una respuesta detallada y extensa.
 
 Contexto:
 {context}
@@ -155,7 +158,7 @@ async def health() -> HealthResponse:
     )
 
 
-@app.post("/chat", response_model=ChatResponse, dependencies=[Depends(require_api_key)],)
+@app.post("/chat", response_model=ChatResponse, dependencies=[Depends(require_api_key)])
 async def chat(payload: ChatRequest) -> ChatResponse:
     runtime: RagRuntime | None = getattr(app.state, "runtime", None)
     if runtime is None:
