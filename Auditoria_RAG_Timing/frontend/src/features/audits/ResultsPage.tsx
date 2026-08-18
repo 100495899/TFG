@@ -97,7 +97,7 @@ export function ResultsPage() {
         <div>
           <h1 className="text-2xl font-semibold">Audit report</h1>
           <p className="mt-1 text-sm text-slate-500">
-            {report.metadata.target_name} · {report.metadata.dataset_name}
+            {report.metadata.target_name} - {report.metadata.dataset_name}
           </p>
           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
             <span>Seed {report.metadata.random_seed}</span>
@@ -317,7 +317,7 @@ export function ResultsPage() {
         </div>
         <div className="mt-3 flex items-center justify-between">
           <Button variant="secondary" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>Previous</Button>
-          <span className="text-sm text-slate-500">Page {page} of {pageCount} · {results.data?.total ?? 0} results</span>
+          <span className="text-sm text-slate-500">Page {page} of {pageCount} - {results.data?.total ?? 0} results</span>
           <Button variant="secondary" disabled={page >= pageCount} onClick={() => setPage((current) => current + 1)}>Next</Button>
         </div>
       </Card>

@@ -356,7 +356,7 @@ export function TermInferenceResultsPage() {
       <section className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Term inference report</h1>
-          <p className="mt-1 text-sm text-slate-500">{data.session.source_label} · status {data.session.status}</p>
+          <p className="mt-1 text-sm text-slate-500">{data.session.source_label} - status {data.session.status}</p>
         </div>
         <Button onClick={download}><Download size={15} className="mr-2 inline" />Export CSV</Button>
       </section>
@@ -368,7 +368,7 @@ export function TermInferenceResultsPage() {
         <MetricCard label="Likely present" value={String(present)} detail="Faster than the calibrated threshold" />
         <MetricCard label="Likely absent" value={String(absent)} detail="Slower than the calibrated threshold" />
         <MetricCard label="Inconclusive" value={String(inconclusive)} detail="Inside uncertainty band or insufficient signal" />
-        <MetricCard label="Threshold" value={ms(data.profile.threshold_ms)} detail={`Gray zone ±${data.profile.gray_zone_ms.toFixed(2)} ms`} />
+        <MetricCard label="Threshold" value={ms(data.profile.threshold_ms)} detail={`Gray zone +/-${data.profile.gray_zone_ms.toFixed(2)} ms`} />
       </section>
 
       <Card className="flex flex-wrap items-center justify-between gap-4 py-3">
@@ -506,7 +506,7 @@ export function TermInferenceResultsPage() {
         <div className="mt-3 flex items-center justify-between">
           <Button variant="secondary" disabled={timelinePage <= 1} onClick={() => setTimelinePage((current) => current - 1)}>Previous</Button>
           <span className="text-sm text-slate-500">
-            Page {timelinePage} of {timelinePageCount} · {filteredMeasurements.length} probes
+            Page {timelinePage} of {timelinePageCount} - {filteredMeasurements.length} probes
           </span>
           <Button variant="secondary" disabled={timelinePage >= timelinePageCount} onClick={() => setTimelinePage((current) => current + 1)}>Next</Button>
         </div>

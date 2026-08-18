@@ -57,7 +57,7 @@ export function TermInferencePage() {
                     <span className="rounded bg-slate-100 px-2 py-1 text-xs font-medium">{item.status}</span>
                   </div>
                   <div className="mt-1 text-sm text-slate-500">
-                    {item.source_type === "audit" ? "Audit calibration" : "CSV calibration"} · {item.result_count} terms · seed {item.random_seed}
+                    {item.source_type === "audit" ? "Audit calibration" : "CSV calibration"} - {item.result_count} terms - seed {item.random_seed}
                   </div>
                   <div className="mt-1 truncate text-xs text-slate-400">{item.source_label}</div>
                 </div>

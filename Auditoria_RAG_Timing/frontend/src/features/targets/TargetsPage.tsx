@@ -13,8 +13,8 @@ type TargetForm = {
 };
 
 const emptyForm: TargetForm = {
-  name: "Mock RAG",
-  endpoint: "http://mock-rag:8010/chat",
+  name: "",
+  endpoint: "",
   headers: '{"Content-Type":"application/json"}',
   payload: '{"question":"{{QUERY}}"}',
   timeout: 30,

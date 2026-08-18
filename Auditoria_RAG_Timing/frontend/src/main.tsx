@@ -52,7 +52,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
             <Route path="targets" element={<TargetsPage />} />
             <Route path="datasets" element={<DatasetsPage />} />
             <Route path="audits/new" element={<NewAuditPage />} />
-            <Route path="audits/running/:id" element={<Navigate to="/dashboard" replace />} />
+            <Route path="audits/running/:id" element={<Navigate to="/audits" replace />} />
             <Route path="term-inference" element={<TermInferencePage />} />
             <Route path="term-inference/new" element={<NewTermInferencePage />} />
             <Route

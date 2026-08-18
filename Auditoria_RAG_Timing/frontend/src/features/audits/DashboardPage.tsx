@@ -53,7 +53,7 @@ export function DashboardPage() {
                       <span className="rounded bg-slate-100 px-2 py-1 text-xs font-medium">{audit.status}</span>
                     </div>
                     <div className="mt-1 text-sm text-slate-500">
-                      {audit.dataset_name} · seed {audit.random_seed} · {audit.calibration_requests} warm-up requests
+                      {audit.dataset_name} - seed {audit.random_seed} - {audit.calibration_requests} warm-up requests
                     </div>
                     <div className="mt-1 truncate text-xs text-slate-400">{audit.id}</div>
                   </div>

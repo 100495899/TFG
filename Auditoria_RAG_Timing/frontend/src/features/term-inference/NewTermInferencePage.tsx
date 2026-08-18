@@ -5,21 +5,12 @@ import { api } from "../../api/client";
 import { Button, Card, Input, Select, Textarea } from "../../components/ui";
 
 const DEFAULT_TERMS_JSON = JSON.stringify({
-  terms: ["bitcoin", "playstation", "gutenberg"],
-  negative_controls: ["zenthorium", "qrevanta"]
+  terms: [],
+  negative_controls: []
 }, null, 2);
 
 const DEFAULT_CUSTOM_QUERIES_JSON = JSON.stringify({
-  man: [
-    "the man of the day",
-    "a young man in the city",
-    "the old man and the sea"
-  ],
-  Tesla: [
-    "Tesla electric vehicle company",
-    "Nikola Tesla inventions",
-    "Tesla battery technology"
-  ]
+  custom_queries: {}
 }, null, 2);
 
 export function NewTermInferencePage() {
@@ -141,7 +132,7 @@ export function NewTermInferencePage() {
               <span className="text-sm font-medium">Completed audit</span>
               <Select value={sourceAuditId} onChange={(event) => setSourceAuditId(event.target.value)} required>
                 <option value="">Select completed audit</option>
-                {completedAudits.map((audit) => <option key={audit.id} value={audit.id}>{audit.id} · seed {audit.random_seed}</option>)}
+                {completedAudits.map((audit) => <option key={audit.id} value={audit.id}>{audit.id} - seed {audit.random_seed}</option>)}
               </Select>
             </label>
           ) : (

@@ -5,8 +5,8 @@ import { api } from "../../api/client";
 import { Button, Card, Input } from "../../components/ui";
 
 export function LoginPage() {
-  const [email, setEmail] = useState("admin@example.com");
-  const [password, setPassword] = useState("admin1234");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -17,7 +17,7 @@ export function LoginPage() {
     try {
       const user = await api.login(email, password);
       queryClient.setQueryData(["current-user"], user);
-      navigate("/dashboard");
+      navigate("/audits");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     }

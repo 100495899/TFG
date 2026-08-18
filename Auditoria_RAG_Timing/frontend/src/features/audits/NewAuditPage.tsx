@@ -31,7 +31,7 @@ export function NewAuditPage() {
       if (seed) payload.random_seed = Number(seed);
       await api.startAudit(payload);
       await queryClient.invalidateQueries({ queryKey: ["audit-dashboard"] });
-      navigate("/dashboard");
+      navigate("/audits");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start audit");
     } finally {
