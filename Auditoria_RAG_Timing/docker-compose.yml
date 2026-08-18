@@ -44,11 +44,10 @@ services:
       API_V1_PREFIX: ${API_V1_PREFIX}
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
-    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     ports:
       - "8000:8000"
     volumes:
-      - ./backend:/app
       - datasets_data:/data/datasets
     depends_on:
       postgres:
@@ -77,7 +76,6 @@ services:
       PYTHONUNBUFFERED: "1"
     command: arq app.workers.arq_worker.WorkerSettings
     volumes:
-      - ./backend:/app
       - datasets_data:/data/datasets
     depends_on:
       postgres:
@@ -86,21 +84,14 @@ services:
         condition: service_healthy
 
   frontend:
-    build: ./frontend
-    environment:
-      VITE_API_BASE_URL: ${VITE_API_BASE_URL}
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL}
     ports:
-      - "5173:5173"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
+      - "5173:80"
     depends_on:
       - backend
-
-  mock-rag:
-    build: ./mock-rag
-    ports:
-      - "8010:8010"
 
 volumes:
   postgres_data:
