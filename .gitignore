@@ -24,3 +24,6 @@ Informe*
 ~WRL*.tmp
 *.tmp
 *.log
+
+*.docx
+*.pdf
